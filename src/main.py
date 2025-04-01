@@ -1,8 +1,7 @@
-import uvicorn
+# src/main.py
 from fastapi import FastAPI
 from src.api import main_router
-
-
+from src.dependency import get_db
 global_tags = [
     {
         "name": "public"
@@ -21,5 +20,3 @@ global_tags = [
 
 app = FastAPI(openapi_tags=global_tags)
 app.include_router(main_router)
-
-uvicorn.run(app, host="localhost", port=8000)
