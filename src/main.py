@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from src.api import main_router
+from src.router import router
 
 global_tags = [
     {"name": "public"},
@@ -9,6 +9,6 @@ global_tags = [
 ]
 
 app = FastAPI(openapi_tags=global_tags)
-app.include_router(main_router)
+app.include_router(router)
 
 
