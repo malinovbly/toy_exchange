@@ -2,6 +2,8 @@
 from fastapi import FastAPI
 from src.api import main_router
 
+from src.database import engine, Base
+
 
 global_tags = [
     {
@@ -17,6 +19,8 @@ global_tags = [
         "name": "admin"
     }
 ]
+
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI(openapi_tags=global_tags)
 app.include_router(main_router)

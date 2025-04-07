@@ -1,4 +1,23 @@
 # src/database.py
+from sqlalchemy import create_engine
+import sqlalchemy
+from sqlalchemy.orm import sessionmaker
+
+
+DATABASE_URL = "sqlite:///./database.db"
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = sqlalchemy.orm.declarative_base()
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
 from typing import List, Optional, Dict
 from uuid import UUID
 from src.models.order import Order
@@ -18,35 +37,6 @@ class InMemoryDatabase:
         self.orders[order.user_id].append(order)  # Store by user_id
         return order
 
-    def get_order_by_id(self, order_id: UUID) -> Optional[Order]:
-        """
-        Gets an order by its ID.
-        """
-        for user_id in self.orders:
-            for order in self.orders[user_id]:
-                if order.order_id == order_id:
-                    return order
-        return None
-
-    def get_orders_by_user(self, user_id: UUID) -> List[Order]:
-        """
-        Gets all orders for a specific user.
-        """
-        return self.orders.get(user_id, [])  # Return empty list if user has no orders
-
-    def cancel_order(self, order_id: UUID) -> Optional[Order]:
-        """
-        Cancels an order.
-        """
-        for user_id in self.orders:
-            for i, order in enumerate(self.orders[user_id]):
-                if order.order_id == order_id:
-                    if order.status == "filled":
-                        return None  # Can't cancel a filled order
-                    order.status = "cancelled"
-                    return order
-        return None
-
     def get_balances(self, user_id: UUID) -> Dict[str, float]:
         """
         Gets all balances for a user.
@@ -63,3 +53,4 @@ class InMemoryDatabase:
             self.balances[user_id][symbol] = 0.0
         self.balances[user_id][symbol] += amount
         return self.balances[user_id][symbol]
+

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Optional, Dict
 from uuid import UUID
 from src.exchange import Exchange
-from src.dependency import get_db
+from src.database import get_db
 from src.models.order import Order, OrderStatus, OrderType, OrderSide
 from src.database import InMemoryDatabase
 from src.api.auth import get_current_user  # Импортируем функцию для проверки токена
