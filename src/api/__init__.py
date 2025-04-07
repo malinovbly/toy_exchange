@@ -1,3 +1,4 @@
+# src/api/__init__.py
 from fastapi import APIRouter
 from src.api.public import router as public_router
 # from src.api.balance import router as balance_router

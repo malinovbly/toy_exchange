@@ -1,9 +1,11 @@
+# src/api/admin.py
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from src.schemas.schemas import User
-from src.models.user import UserModel
 from src.database import get_db
+from src.utils import get_user_by_api_key, delete_user_by_id
+from src.security import api_key_header
 
 
 summary_tags = {
@@ -18,15 +20,16 @@ router = APIRouter()
 
 
 @router.delete(path="/api/v1/admin/user/{user_id}", tags=["admin", "user"], response_model=User, summary=summary_tags["delete_user"])
-def delete_user(user_id: str, authorization: str = None, db: Session = Depends(get_db)):
-    db_user = db.query(UserModel).filter_by(id=user_id).first()
+def delete_user(user_id: str, authorization: str = Depends(api_key_header), db: Session = Depends(get_db)):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
-    if db_user:
-        db.delete(db_user)
-        db.commit()
-        return db_user
+    auth_user = get_user_by_api_key(authorization, db)
 
-    raise HTTPException(status_code=422, detail="Validation Error")
+    if (auth_user.role == "ADMIN") or (auth_user.id == user_id):
+        return delete_user_by_id(user_id, db)
+
+    raise HTTPException(status_code=403, detail="Forbidden")
 
 
 @router.post(path="/api/v1/admin/instrument", tags=["admin"], summary=summary_tags["add_instrument"])

@@ -1,7 +1,7 @@
 # src/main.py
 from fastapi import FastAPI
-from src.api import main_router
 
+from src.api import main_router
 from src.database import engine, Base
 
 

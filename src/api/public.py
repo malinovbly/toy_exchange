@@ -1,9 +1,10 @@
+# src/api/public.py
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 
 from src.schemas.schemas import NewUser, User
 from src.models.user import UserModel
-from src.utils import generate_uuid
+from src.utils import generate_uuid, check_username
 from src.database import get_db
 
 
@@ -21,8 +22,8 @@ router = APIRouter()
 # Регистрация: создаём пользователя с user_id и token
 @router.post("/api/v1/public/register", tags=["public"], response_model=User, summary=summary_tags["register"])
 def register(user: NewUser, db: Session = Depends(get_db)):
-    if not db.query(UserModel).filter_by(name=user.name).first() is None:
-        raise HTTPException(status_code=400, detail="Username already exists")
+    if not check_username(user.name, db) is None:
+        raise HTTPException(status_code=409, detail="Username already exists")
 
     token = generate_uuid()
 
