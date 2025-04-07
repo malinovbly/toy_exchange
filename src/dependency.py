@@ -1,6 +1,7 @@
 # src/dependencies.py
 from src.database import InMemoryDatabase
 
+
 # Создать ОДИН экземпляр базы данных
 db = InMemoryDatabase()
 

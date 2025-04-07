@@ -3,7 +3,7 @@ from fastapi.security.api_key import APIKeyHeader
 from pydantic import BaseModel
 import uuid
 import hashlib
-from uuid import UUID  
+
 
 router = APIRouter()
 
@@ -13,16 +13,20 @@ fake_users_db = {}
 # Схема безопасности — для кнопки "Authorize"
 api_key_header = APIKeyHeader(name="Authorization", auto_error=False)
 
+
 class RegisterRequest(BaseModel):
     username: str
     password: str
 
+
 class RegisterResponse(BaseModel):
     token: str
+
 
 # Хэшируем, чтобы не хранить пароль в чистом виде
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
+
 
 # Регистрация: создаём пользователя с user_id и token
 @router.post("/api/v1/public/register", tags=["public"], response_model=RegisterResponse)
@@ -41,6 +45,7 @@ def register(user: RegisterRequest):
 
     return {"token": token}
 
+
 # Проверка токена + возвращаем и user_id, и username
 def get_current_user(api_key: str = Security(api_key_header)) -> dict:
     if not api_key or not api_key.startswith("TOKEN "):
@@ -56,6 +61,7 @@ def get_current_user(api_key: str = Security(api_key_header)) -> dict:
             }
 
     raise HTTPException(status_code=401, detail="Invalid token")
+
 
 # Пример защищённого маршрута
 @router.get("/api/v1/protected", tags=["public"])

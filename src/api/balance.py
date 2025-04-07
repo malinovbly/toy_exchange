@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from src.database import InMemoryDatabase
 from decimal import Decimal
 
+
 router = APIRouter()
 
 
