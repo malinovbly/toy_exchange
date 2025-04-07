@@ -1,4 +1,9 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from src.schemas.schemas import User
+from src.models.user import UserModel
+from src.database import get_db
 
 
 summary_tags = {
@@ -12,9 +17,16 @@ summary_tags = {
 router = APIRouter()
 
 
-@router.delete(path="/api/v1/admin/user/{user_id}", tags=["admin", "user"], summary=summary_tags["delete_user"])
-def delete_user():
-    ...
+@router.delete(path="/api/v1/admin/user/{user_id}", tags=["admin", "user"], response_model=User, summary=summary_tags["delete_user"])
+def delete_user(user_id: str, authorization: str = None, db: Session = Depends(get_db)):
+    db_user = db.query(UserModel).filter_by(id=user_id).first()
+
+    if db_user:
+        db.delete(db_user)
+        db.commit()
+        return db_user
+
+    raise HTTPException(status_code=422, detail="Validation Error")
 
 
 @router.post(path="/api/v1/admin/instrument", tags=["admin"], summary=summary_tags["add_instrument"])

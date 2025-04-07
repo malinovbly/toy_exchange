@@ -1,17 +1,22 @@
 # src/api/balance.py
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from typing import Dict
 from uuid import UUID
-from pydantic import BaseModel
+
 from src.database import InMemoryDatabase
-from decimal import Decimal
+
+
+summary_tags = {
+    "get_balances": "Get Balances",
+    "deposit": "Deposit",
+    "withdraw": "Withdraw"
+}
 
 
 router = APIRouter()
 
 
-@router.get(path="/api/v1/balance/{user_id}", tags=["balance"], response_model=Dict[str, float],
-            summary="Get user balances")
+@router.get(path="/api/v1/balance/{user_id}", tags=["balance"], response_model=Dict[str, float], summary=summary_tags["get_balances"])
 def get_balances(user_id: UUID, db: InMemoryDatabase = Depends(lambda: InMemoryDatabase())):
     """
     Get the balances for all instruments for a given user.
@@ -20,11 +25,11 @@ def get_balances(user_id: UUID, db: InMemoryDatabase = Depends(lambda: InMemoryD
     return balances
 
 
-@router.post(path="/api/v1/balance/deposit", tags=["balance"])
+@router.post(path="/api/v1/balance/deposit", tags=["balance"], summary=summary_tags["deposit"])
 def deposit():
     ...
 
 
-@router.post(path="/api/v1/balance/withdraw", tags=["balance"])
+@router.post(path="/api/v1/balance/withdraw", tags=["balance"], summary=summary_tags["withdraw"])
 def withdraw():
     ...

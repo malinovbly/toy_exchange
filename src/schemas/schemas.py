@@ -2,9 +2,12 @@
 from pydantic import BaseModel
 
 
-class RegisterRequest(BaseModel):
+class NewUser(BaseModel):
     name: str
 
 
-class RegisterResponse(BaseModel):
-    token: str
+class User(BaseModel):
+    id: str
+    name: str
+    role: str
+    api_key: str
