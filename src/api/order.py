@@ -5,7 +5,7 @@ from src.exchange import Exchange
 from src.database import get_db
 from src.models.order import Order, OrderStatus, OrderType, OrderSide
 from src.database import InMemoryDatabase
-from src.api.auth import get_current_user  # Импортируем функцию для проверки токена
+from src.api.auth_tests import get_current_user  # Импортируем функцию для проверки токена
 
 
 router = APIRouter()

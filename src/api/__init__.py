@@ -3,7 +3,7 @@ from src.api.public import router as public_router
 from src.api.balance import router as balance_router
 from src.api.order import router as order_router
 from src.api.admin import router as admin_router
-from src.api.auth import router as auth_router
+from src.api.auth_tests import router as auth_router
 
 
 main_router = APIRouter()
