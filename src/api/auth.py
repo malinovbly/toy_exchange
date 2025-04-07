@@ -1,11 +1,11 @@
 from fastapi import APIRouter, HTTPException, Security, Depends
 from fastapi.security.api_key import APIKeyHeader
-import uuid
 from sqlalchemy.orm import Session
 
 from src.schemas.schemas import RegisterRequest, RegisterResponse
 from src.database import get_db
 from src.models.user import UserModel
+from src.utils import generate_uuid
 
 
 router = APIRouter()
@@ -23,11 +23,10 @@ def register(user: RegisterRequest, db: Session = Depends(get_db)):
     if not db.query(UserModel).filter(UserModel.name == user.name).first() is None:
         raise HTTPException(status_code=400, detail="Username already exists")
 
-    user_id = str(uuid.uuid4())
-    token = str(uuid.uuid4())
+    token = generate_uuid()
 
     db_user = UserModel(
-        id=user_id,
+        id=generate_uuid(),
         name=user.name,
         role="USER",
         api_key=token
