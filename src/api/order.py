@@ -7,20 +7,15 @@ from src.models.order import Order, OrderStatus, OrderType, OrderSide
 from src.database import InMemoryDatabase
 from src.api.auth import get_current_user  # Импортируем функцию для проверки токена
 
+
 router = APIRouter()
+
 
 async def get_exchange():
     exchange = Exchange()
     await exchange.connect()
     return exchange
 
-# Пример защищённого маршрута
-@router.get("/api/v1/protected", tags=["public"])
-def protected_route(current_user: dict = Depends(get_current_user)):
-    return {
-        "message": f"Hello, {current_user['username']}!",
-        "user_id": str(current_user["user_id"])
-    }
 
 # Создание нового ордера (с проверкой токена)
 @router.post(path="/api/v1/order", tags=["order"], response_model=Order, summary="Create a new order")
@@ -54,6 +49,7 @@ async def create_order(order: Order,
     created_order = db.create_order(order)
     return created_order
 
+
 # Получение всех ордеров (с проверкой токена)
 @router.get(path="/api/v1/order", tags=["order"], response_model=List[Order],
             summary="List all orders (or filter by user)")
@@ -70,6 +66,7 @@ def list_orders(user_id: Optional[UUID] = Query(None, description="Filter orders
         all_orders.extend(db.orders[user_id])
     return all_orders
 
+
 # Получение ордера по ID (с проверкой токена)
 @router.get(path="/api/v1/order/{order_id}", tags=["order"], response_model=Order, summary="Get an order by ID")
 def get_order(order_id: UUID, current_user: dict = Depends(get_current_user), 
@@ -82,6 +79,7 @@ def get_order(order_id: UUID, current_user: dict = Depends(get_current_user),
         raise HTTPException(status_code=404, detail="Order not found")
     return order
 
+
 # Отмена ордера (с проверкой токена)
 @router.delete(path="/api/v1/order/{order_id}", tags=["order"], response_model=Order, summary="Cancel an order")
 def cancel_order(order_id: UUID, current_user: dict = Depends(get_current_user),  
@@ -93,6 +91,7 @@ def cancel_order(order_id: UUID, current_user: dict = Depends(get_current_user),
     if not cancelled_order:
         raise HTTPException(status_code=404, detail="Order not found or cannot cancel filled order")
     return cancelled_order
+
 
 # Получение статуса ордера (с проверкой токена)
 @router.get(path="/api/v1/order/{order_id}/status", tags=["order"], response_model=OrderStatus,
@@ -107,6 +106,7 @@ def get_order_status(order_id: UUID, current_user: dict = Depends(get_current_us
         raise HTTPException(status_code=404, detail="Order not found")
     return order.status
 
+
 # Получение активных ордеров пользователя (с проверкой токена)
 @router.get(path="/api/v1/order/active/{user_id}", tags=["order"], response_model=List[Order],
             summary="Get active orders for a user")
@@ -118,6 +118,7 @@ def get_active_orders(user_id: UUID, current_user: dict = Depends(get_current_us
     orders = db.get_orders_by_user(user_id)
     active_orders = [order for order in orders if order.status in (OrderStatus.OPEN, OrderStatus.PENDING)]
     return active_orders
+
 
 # Получение ордербука для символа (с проверкой токена)
 @router.get(path="/api/v1/orderbook/{symbol}", tags=["order"], response_model=Dict,
