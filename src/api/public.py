@@ -22,7 +22,7 @@ router = APIRouter()
 # Регистрация: создаём пользователя с user_id и token
 @router.post("/api/v1/public/register", tags=["public"], response_model=User, summary=summary_tags["register"])
 def register(user: NewUser, db: Session = Depends(get_db)):
-    if not check_username(user.name, db) is None:
+    if check_username(user.name, db) is not None:
         raise HTTPException(status_code=409, detail="Username already exists")
 
     token = generate_uuid()
