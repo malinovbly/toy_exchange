@@ -4,9 +4,7 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from src.schemas.schemas import NewUser, User, Instrument
-from src.models.user import UserModel
-from src.utils import (generate_uuid,
-                       check_username,
+from src.utils import (check_username,
                        get_all_instruments,
                        register_new_user)
 from src.database import get_db
