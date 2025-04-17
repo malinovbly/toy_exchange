@@ -4,7 +4,8 @@ from fastapi import Depends, HTTPException
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
-from src.schemas.schemas import (Instrument,
+from src.schemas.schemas import (NewUser,
+                                 Instrument,
                                  Body_deposit_api_v1_admin_balance_deposit_post,
                                  Body_withdraw_api_v1_admin_balance_withdraw_post)
 from src.models.user import UserModel
@@ -19,6 +20,22 @@ def generate_uuid():
 
 
 # users
+def register_new_user(user: NewUser, db: Session = Depends(get_db)):
+    user_id = generate_uuid()
+    token = generate_uuid()
+
+    db_user = UserModel(
+        id=user_id,
+        name=user.name,
+        role="USER",
+        api_key=token
+    )
+    db.add(db_user)
+    db.commit()
+
+    return db_user
+
+
 def check_user_is_admin(authorization: str = Depends(api_key_header), db: Session = Depends(get_db)):
     auth_user = get_user_by_api_key(authorization, db)
     if (auth_user is None) or not (auth_user.role == "ADMIN"):

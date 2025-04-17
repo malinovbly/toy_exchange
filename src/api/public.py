@@ -7,7 +7,8 @@ from src.schemas.schemas import NewUser, User, Instrument
 from src.models.user import UserModel
 from src.utils import (generate_uuid,
                        check_username,
-                       get_all_instruments)
+                       get_all_instruments,
+                       register_new_user)
 from src.database import get_db
 
 
@@ -22,25 +23,11 @@ summary_tags = {
 router = APIRouter()
 
 
-# Регистрация: создаём пользователя с user_id и token
 @router.post("/api/v1/public/register", tags=["public"], response_model=User, summary=summary_tags["register"])
 def register(user: NewUser, db: Session = Depends(get_db)):
     if check_username(user.name, db) is not None:
         raise HTTPException(status_code=409, detail="Username already exists")
-
-    user_id = generate_uuid()
-    token = generate_uuid()
-
-    db_user = UserModel(
-        id=user_id,
-        name=user.name,
-        role="USER",
-        api_key=token
-    )
-    db.add(db_user)
-    db.commit()
-
-    return db_user
+    return register_new_user(user, db)
 
 
 @router.get(path="/api/v1/public/instrument", tags=["public"], response_model=List[Instrument], summary=summary_tags["list_instruments"])
