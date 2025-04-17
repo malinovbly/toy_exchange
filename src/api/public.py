@@ -25,10 +25,11 @@ def register(user: NewUser, db: Session = Depends(get_db)):
     if check_username(user.name, db) is not None:
         raise HTTPException(status_code=409, detail="Username already exists")
 
+    user_id = generate_uuid()
     token = generate_uuid()
 
     db_user = UserModel(
-        id=generate_uuid(),
+        id=user_id,
         name=user.name,
         role="USER",
         api_key=token

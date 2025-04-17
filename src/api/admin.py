@@ -2,10 +2,19 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from src.schemas.schemas import User, Instrument, Ok
-from src.models.instrument import InstrumentModel
+from src.schemas.schemas import (User,
+                                 Instrument,
+                                 Ok,
+                                 Body_deposit_api_v1_admin_balance_deposit_post,
+                                 Body_withdraw_api_v1_admin_balance_withdraw_post)
+from src.utils import (get_user_by_api_key,
+                       check_user_is_admin,
+                       delete_user_by_id,
+                       create_instrument,
+                       delete_instrument_by_ticker,
+                       user_balance_deposit,
+                       user_balance_withdraw)
 from src.database import get_db
-from src.utils import get_user_by_api_key, delete_user_by_id, check_instrument, delete_instrument_by_ticker
 from src.security import api_key_header
 
 
@@ -41,19 +50,10 @@ def add_instrument(instrument: Instrument, authorization: str = Depends(api_key_
     if not authorization:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    auth_user = get_user_by_api_key(authorization, db)
-    if (auth_user is None) or not (auth_user.role == "ADMIN"):
-        raise HTTPException(status_code=403, detail="Forbidden")
+    if check_user_is_admin(authorization, db):
+        create_instrument(instrument, db)
 
-    if check_instrument(instrument, db) is not None:
-        raise HTTPException(status_code=409, detail="Instrument already exists")
-
-    db_instrument = InstrumentModel(
-        name=instrument.name,
-        ticker=instrument.ticker
-    )
-    db.add(db_instrument)
-    db.commit()
+    create_instrument(instrument, db)
 
     return Ok
 
@@ -63,20 +63,29 @@ def delete_instrument(ticker: str, authorization: str = Depends(api_key_header),
     if not authorization:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    auth_user = get_user_by_api_key(authorization, db)
-    if (auth_user is None) or not (auth_user.role == "ADMIN"):
-        raise HTTPException(status_code=403, detail="Forbidden")
-
-    delete_instrument_by_ticker(ticker, db)
+    if check_user_is_admin(authorization, db):
+        delete_instrument_by_ticker(ticker, db)
 
     return Ok
 
 
-@router.post(path="/api/v1/admin/balance/deposit", tags=["admin"], summary=summary_tags["deposit"])
-def deposit():
-    ...
+@router.post(path="/api/v1/admin/balance/deposit", tags=["admin", "balance"], response_model=Ok, summary=summary_tags["deposit"])
+def deposit(request: Body_deposit_api_v1_admin_balance_deposit_post, authorization: str = Depends(api_key_header), db: Session = Depends(get_db)):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    if check_user_is_admin(authorization, db):
+        user_balance_deposit(request, db)
+
+    return Ok
 
 
-@router.post(path="/api/v1/admin/balance/withdraw", tags=["admin"], summary=summary_tags["withdraw"])
-def withdraw():
-    ...
+@router.post(path="/api/v1/admin/balance/withdraw", tags=["admin", "balance"], response_model=Ok, summary=summary_tags["withdraw"])
+def withdraw(request: Body_withdraw_api_v1_admin_balance_withdraw_post, authorization: str = Depends(api_key_header), db: Session = Depends(get_db)):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    if check_user_is_admin(authorization, db):
+        user_balance_withdraw(request, db)
+
+    return Ok

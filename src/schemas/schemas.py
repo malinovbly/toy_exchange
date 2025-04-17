@@ -1,6 +1,18 @@
 # src/schemas/schemas.py
 import pydantic
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, conint
+
+
+class Body_deposit_api_v1_admin_balance_deposit_post(BaseModel):
+    user_id: str
+    ticker: str
+    amount: conint(gt=0)
+
+
+class Body_withdraw_api_v1_admin_balance_withdraw_post(BaseModel):
+    user_id: str
+    ticker: str
+    amount: conint(gt=0)
 
 
 class Instrument(BaseModel):
