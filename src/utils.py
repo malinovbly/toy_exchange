@@ -57,6 +57,10 @@ def check_instrument(instrument: Instrument, db: Session = Depends(get_db)):
     return db_instrument
 
 
+def get_all_instruments(db: Session = Depends(get_db)):
+    return db.query(InstrumentModel).all()
+
+
 def get_instrument_by_ticker(ticker: str, db: Session = Depends(get_db)):
     return db.query(InstrumentModel).filter_by(ticker=ticker).first()
 
@@ -85,6 +89,12 @@ def delete_instrument_by_ticker(ticker: str, db: Session = Depends(get_db)):
 
 
 # balances
+def get_balances_by_user_id(user_id: str, db: Session = Depends(get_db)):
+    db_balances = db.query(BalanceModel).filter_by(user_id=user_id).all()
+    balances = {b.instrument_ticker: b.amount for b in db_balances}
+    return balances
+
+
 def check_balance_record(user_id: str, ticker: str, db: Session = Depends(get_db)):
     return db.query(BalanceModel).filter_by(user_id=user_id).filter_by(instrument_ticker=ticker).first()
 

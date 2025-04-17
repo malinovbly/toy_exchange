@@ -53,8 +53,6 @@ def add_instrument(instrument: Instrument, authorization: str = Depends(api_key_
     if check_user_is_admin(authorization, db):
         create_instrument(instrument, db)
 
-    create_instrument(instrument, db)
-
     return Ok
 
 

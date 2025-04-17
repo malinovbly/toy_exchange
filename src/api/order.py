@@ -17,7 +17,6 @@ summary_tags = {
     "cancel_order": "Cancel Order"
 }
 
-
 router = APIRouter()
 
 

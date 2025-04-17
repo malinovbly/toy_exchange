@@ -1,10 +1,13 @@
 # src/api/public.py
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
+from typing import List
 
-from src.schemas.schemas import NewUser, User
+from src.schemas.schemas import NewUser, User, Instrument
 from src.models.user import UserModel
-from src.utils import generate_uuid, check_username
+from src.utils import (generate_uuid,
+                       check_username,
+                       get_all_instruments)
 from src.database import get_db
 
 
@@ -40,9 +43,9 @@ def register(user: NewUser, db: Session = Depends(get_db)):
     return db_user
 
 
-@router.get(path="/api/v1/public/instrument", tags=["public"], summary=summary_tags["list_instruments"])
-def list_instruments():
-    ...
+@router.get(path="/api/v1/public/instrument", tags=["public"], response_model=List[Instrument], summary=summary_tags["list_instruments"])
+def list_instruments(db: Session = Depends(get_db)):
+    return get_all_instruments(db)
 
 
 @router.get(path="/api/v1/public/orderbook/{ticker}", tags=["public"], summary=summary_tags["get_orderbook"])
