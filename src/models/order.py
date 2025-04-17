@@ -1,5 +1,4 @@
 # src/models/order.py
-
 from pydantic import BaseModel
 from uuid import UUID, uuid4
 from enum import Enum
