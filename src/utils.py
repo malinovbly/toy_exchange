@@ -1,5 +1,5 @@
 # src/utils.py
-from uuid import uuid4
+from uuid import uuid4, UUID
 from fastapi import Depends, HTTPException
 from sqlalchemy import update
 from sqlalchemy.orm import Session
@@ -7,12 +7,15 @@ from sqlalchemy.orm import Session
 from src.schemas.schemas import (NewUser,
                                  Instrument,
                                  Body_deposit_api_v1_admin_balance_deposit_post,
-                                 Body_withdraw_api_v1_admin_balance_withdraw_post)
+                                 Body_withdraw_api_v1_admin_balance_withdraw_post,
+                                 Order)
 from src.models.user import UserModel
 from src.models.instrument import InstrumentModel
 from src.models.balance import BalanceModel
+from src.models.order import OrderModel
 from src.database import get_db
 from src.security import api_key_header
+from src.models.order import OrderStatus
 
 
 def generate_uuid():
@@ -167,3 +170,57 @@ def user_balance_withdraw(request: Body_withdraw_api_v1_admin_balance_withdraw_p
             db.commit()
         else:
             raise HTTPException(status_code=403, detail="Insufficient Funds")
+
+
+# orders
+def create_order_in_db(order: Order, db: Session = Depends(get_db)):
+    db_order = OrderModel(
+        order_id=uuid4(),  # сразу UUID, без str()
+        user_id=UUID(order.user_id),  # преобразуем строку в UUID
+        symbol=order.symbol,
+        order_type=order.order_type,
+        side=order.side,
+        quantity=order.quantity,
+        price=order.price,
+        status=OrderStatus.PENDING
+    )
+    db.add(db_order)
+    db.commit()
+    db.refresh(db_order)
+    return db_order
+
+def get_order_by_id(order_id: str, db: Session = Depends(get_db)):
+    return db.query(OrderModel).filter_by(order_id=order_id).first()
+
+
+def delete_order_by_id(order_id: str, db: Session = Depends(get_db)):
+    db_order = get_order_by_id(order_id, db)
+    if db_order is None:
+        raise HTTPException(status_code=404, detail="Order Not Found")
+    db.delete(db_order)
+    db.commit()
+    return db_order
+
+def get_orders_by_user(cur_user_id: UUID, db: Session):
+    return db.query(OrderModel).filter_by(user_id=cur_user_id).all()
+
+def cancel_order(order_id: str, db: Session = Depends(get_db)):
+    db_order = db.query(OrderModel).filter_by(order_id=order_id).first()
+    if db_order is None:
+        raise HTTPException(status_code=404, detail="Order Not Found")
+    db_order.status = OrderStatus.CANCELLED
+    db.commit()
+    return db_order
+
+def list_all_orders(db: Session = Depends(get_db)):
+    return db.query(OrderModel).all()
+
+def update_balance(user_id: str, ticker: str, new_amount: float, db: Session = Depends(get_db)):
+    record = check_balance_record(user_id=user_id, ticker=ticker, db=db)
+    
+    if record:
+        record.amount = new_amount
+        db.commit()
+        return record
+    else:
+        raise HTTPException(status_code=404, detail="Balance record not found")
