@@ -8,15 +8,21 @@ from src.schemas.schemas import (NewUser,
                                  Instrument,
                                  Body_deposit_api_v1_admin_balance_deposit_post,
                                  Body_withdraw_api_v1_admin_balance_withdraw_post,
-                                 Order)
+                                 )
+from src.schemas.schemas import LimitOrderBody, MarketOrderBody, OrderStatus as SchemaOrderStatus
 from src.models.user import UserModel
 from src.models.instrument import InstrumentModel
 from src.models.balance import BalanceModel
-from src.models.order import OrderModel
+from src.models.order import OrderModel, OrderStatus, Direction
 from src.database import get_db
 from src.security import api_key_header
 from src.models.order import OrderStatus
 
+
+from src.models.user import UserModel
+from sqlalchemy.orm import Session
+from src.database import get_db
+from fastapi import Depends, HTTPException, Security, APIRouter
 
 def generate_uuid():
     return str(uuid4())
@@ -57,6 +63,23 @@ def get_user_by_id(user_id: str, db: Session = Depends(get_db)):
 def get_user_by_api_key(api_key: str, db: Session = Depends(get_db)):
     return db.query(UserModel).filter_by(api_key=api_key).first()
 
+# тот самый старый get_current_user
+def get_current_user(
+    api_key: str = Security(api_key_header),
+    db: Session = Depends(get_db)
+) -> dict:
+    if not api_key:
+        raise HTTPException(status_code=401, detail="Invalid or missing token")
+    
+    token = api_key[6:]
+    user = db.query(UserModel).filter(UserModel.api_key == token).first()
+    if user is None:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    return {
+        "username": user.name,
+        "user_id": user.id
+    }
 
 def delete_user_by_id(user_id: str, db: Session = Depends(get_db)):
     db_user = get_user_by_id(user_id, db)
@@ -173,27 +196,42 @@ def user_balance_withdraw(request: Body_withdraw_api_v1_admin_balance_withdraw_p
 
 
 # orders
-def create_order_in_db(order: Order, db: Session = Depends(get_db)):
+# прочесать позже и объединить с импортами в начале
+from uuid import UUID, uuid4
+from datetime import datetime
+from sqlalchemy.orm import Session
+from fastapi import HTTPException, Depends
+from src.models.order import OrderModel, OrderStatus, Direction
+from src.schemas.schemas import LimitOrderBody, MarketOrderBody, OrderStatus as SchemaOrderStatus
+from src.database import get_db
+from typing import Optional, Union
+
+def create_order_in_db(order_data: Union[LimitOrderBody, MarketOrderBody], user_id: UUID, db: Session = Depends(get_db)):
     db_order = OrderModel(
-        order_id=uuid4(),  # сразу UUID, без str()
-        user_id=UUID(order.user_id),  # преобразуем строку в UUID
-        symbol=order.symbol,
-        order_type=order.order_type,
-        side=order.side,
-        quantity=order.quantity,
-        price=order.price,
-        status=OrderStatus.PENDING
+        id=uuid4(),
+        user_id=user_id,
+        timestamp=datetime.utcnow(),
+        direction=order_data.direction,
+        ticker=order_data.ticker,
+        qty=order_data.qty,
+        status=OrderStatus.NEW,
+        filled=0
     )
+    
+    if isinstance(order_data, LimitOrderBody):
+        db_order.price = order_data.price
+    
     db.add(db_order)
     db.commit()
     db.refresh(db_order)
     return db_order
 
-def get_order_by_id(order_id: str, db: Session = Depends(get_db)):
-    return db.query(OrderModel).filter_by(order_id=order_id).first()
+
+def get_order_by_id(order_id: UUID, db: Session = Depends(get_db)):
+    return db.query(OrderModel).filter(OrderModel.id == order_id).first()
 
 
-def delete_order_by_id(order_id: str, db: Session = Depends(get_db)):
+def delete_order_by_id(order_id: UUID, db: Session = Depends(get_db)):
     db_order = get_order_by_id(order_id, db)
     if db_order is None:
         raise HTTPException(status_code=404, detail="Order Not Found")
@@ -201,26 +239,88 @@ def delete_order_by_id(order_id: str, db: Session = Depends(get_db)):
     db.commit()
     return db_order
 
-def get_orders_by_user(cur_user_id: UUID, db: Session):
-    return db.query(OrderModel).filter_by(user_id=cur_user_id).all()
 
-def cancel_order(order_id: str, db: Session = Depends(get_db)):
-    db_order = db.query(OrderModel).filter_by(order_id=order_id).first()
+def get_orders_by_user(user_id: UUID, db: Session = Depends(get_db)):
+    return db.query(OrderModel).filter(OrderModel.user_id == user_id).all()
+
+
+def cancel_order(order_id: UUID, db: Session = Depends(get_db)):
+    db_order = get_order_by_id(order_id, db)
     if db_order is None:
         raise HTTPException(status_code=404, detail="Order Not Found")
+    
+    if db_order.status not in [OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED]:
+        raise HTTPException(
+            status_code=400,
+            detail="Only NEW or PARTIALLY_EXECUTED orders can be cancelled"
+        )
+    
     db_order.status = OrderStatus.CANCELLED
     db.commit()
+    db.refresh(db_order)
     return db_order
+
 
 def list_all_orders(db: Session = Depends(get_db)):
     return db.query(OrderModel).all()
 
-def update_balance(user_id: str, ticker: str, new_amount: float, db: Session = Depends(get_db)):
-    record = check_balance_record(user_id=user_id, ticker=ticker, db=db)
+def update_order_status(
+    order_id: UUID, 
+    new_status: SchemaOrderStatus,
+    filled_qty: Optional[int] = None,
+    db: Session = Depends(get_db)
+):
+    db_order = get_order_by_id(order_id, db)
+    if db_order is None:
+        raise HTTPException(status_code=404, detail="Order Not Found")
     
-    if record:
-        record.amount = new_amount
-        db.commit()
-        return record
-    else:
-        raise HTTPException(status_code=404, detail="Balance record not found")
+    db_order.status = new_status
+    if filled_qty is not None:
+        db_order.filled = filled_qty
+    
+    db.commit()
+    db.refresh(db_order)
+    return db_order
+
+
+def get_orders_by_ticker(ticker: str, db: Session = Depends(get_db)):
+    return db.query(OrderModel).filter(OrderModel.ticker == ticker).all()
+
+
+def get_active_orders_by_ticker(ticker: str, db: Session = Depends(get_db)):
+    return db.query(OrderModel).filter(
+        OrderModel.ticker == ticker,
+        OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED])
+    ).all()
+
+# тут была попытка обновлять баланс по заказам, не совсем доделано
+def update_user_balance(
+    db: Session,
+    user_id: UUID,
+    ticker: str,
+    amount_change: int
+) -> BalanceModel:
+    balance = db.query(BalanceModel).filter(
+        BalanceModel.user_id == str(user_id),
+        BalanceModel.instrument_ticker == ticker
+    ).first()
+
+    if not balance:
+        balance = BalanceModel(
+            user_id=str(user_id),
+            instrument_ticker=ticker,
+            amount=0
+        )
+        db.add(balance)
+
+    new_amount = balance.amount + amount_change
+    if new_amount < 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Insufficient balance for {ticker}"
+        )
+    balance.amount = new_amount
+    db.commit()
+    db.refresh(balance)
+    return balance
+
