@@ -66,11 +66,12 @@ def get_orderbook(
 @router.get(
     path="/api/v1/public/transactions/{ticker}", 
     tags=["public"], 
-    response_model=Transaction,
-    summary="Get last transaction"
+    response_model=List[Transaction],
+    summary="Get transaction history"
 )
 def get_transaction_history(
     ticker: str,
+    limit: int = Query(10, ge=1, le=100), 
     db: Session = Depends(get_db)
 ):
     instrument = db.query(InstrumentModel).filter(
@@ -82,22 +83,24 @@ def get_transaction_history(
             detail=f"Ticker {ticker} not found"
         )
     
-    orders = db.query(OrderModel).filter(
+    transactions = db.query(OrderModel).filter(
         OrderModel.ticker == ticker,
-        OrderModel.status == OrderStatus.CANCELLED
-    ).order_by(OrderModel.timestamp.desc())
+        OrderModel.status.in_([OrderStatus.EXECUTED, OrderStatus.CANCELLED])
+    ).order_by(OrderModel.timestamp.desc()).limit(limit).all()
 
-    last_order = orders.first() 
-
-    if not last_order:
+    if not transactions:
         raise HTTPException(
             status_code=404,
             detail=f"No transactions found for ticker {ticker}"
         )
 
-    return Transaction(
-        ticker=last_order.ticker,
-        amount=last_order.qty,
-        price=last_order.price,
-        timestamp=last_order.timestamp
-    )
+    return [
+        Transaction(
+            ticker=order.ticker,
+            amount=order.qty,
+            price=order.price,
+            timestamp=order.timestamp,
+            status=order.status.value  
+        )
+        for order in transactions
+    ]
