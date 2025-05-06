@@ -1,4 +1,4 @@
-# src/models/instrument.py
+# src/models/balance.py
 from sqlalchemy import Column, String, ForeignKey, Integer
 
 from src.database import Base
