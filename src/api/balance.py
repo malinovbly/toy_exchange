@@ -22,6 +22,6 @@ def get_balances(authorization: str = Depends(api_key_header), db: Session = Dep
 
     auth_user = get_user_by_api_key(authorization, db)
     if auth_user is None:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+        raise HTTPException(status_code=401, detail="Unauthorized 2")
 
     return get_balances_by_user_id(auth_user.id, db)

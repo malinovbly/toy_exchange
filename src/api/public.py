@@ -1,14 +1,17 @@
 # src/api/public.py
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy.orm import Session
 from typing import List
-
+from src.models.order import OrderModel, OrderStatus, Direction
+from src.models.instrument import InstrumentModel
 from src.schemas.schemas import NewUser, User, Instrument
 from src.utils import (check_username,
                        get_all_instruments,
-                       register_new_user)
+                       register_new_user,
+                       aggregate_orders)
 from src.database import get_db
 
+from src.schemas.schemas import L2OrderBook, Transaction
 
 summary_tags = {
     "register": "Register",
@@ -16,7 +19,6 @@ summary_tags = {
     "get_orderbook": "Get Orderbook",
     "get_transaction_history": "Get Transaction History"
 }
-
 
 router = APIRouter()
 
@@ -33,11 +35,73 @@ def list_instruments(db: Session = Depends(get_db)):
     return get_all_instruments(db)
 
 
-@router.get(path="/api/v1/public/orderbook/{ticker}", tags=["public"], summary=summary_tags["get_orderbook"])
-def get_orderbook():
-    ...
+@router.get(
+    "/api/v1/public/orderbook/{ticker}",
+    tags=["public"],
+    response_model=L2OrderBook,
+    summary="Get Orderbook"
+)
+def get_orderbook(
+    ticker: str,
+    limit: int = Query(10, ge=1, le=25),
+    db: Session = Depends(get_db)
+):
+    bids = db.query(OrderModel).filter(
+        OrderModel.ticker == ticker,
+        OrderModel.direction == Direction.BUY,
+        OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED])
+    ).order_by(OrderModel.price.desc()).limit(limit).all()
+
+    asks = db.query(OrderModel).filter(
+        OrderModel.ticker == ticker,
+        OrderModel.direction == Direction.SELL,
+        OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED])
+    ).order_by(OrderModel.price.asc()).limit(limit).all()
+
+    bid_levels = aggregate_orders(bids)
+    ask_levels = aggregate_orders(asks)
+
+    return L2OrderBook(bid_levels=bid_levels, ask_levels=ask_levels)
 
 
-@router.get(path="/api/v1/public/transactions/{ticker}", tags=["public"], summary=summary_tags["get_transaction_history"])
-def get_transaction_history():
-    ...
+@router.get(
+    path="/api/v1/public/transactions/{ticker}", 
+    tags=["public"], 
+    response_model=List[Transaction],
+    summary="Get transaction history"
+)
+def get_transaction_history(
+    ticker: str,
+    limit: int = Query(10, ge=1, le=100), 
+    db: Session = Depends(get_db)
+):
+    instrument = db.query(InstrumentModel).filter(
+        InstrumentModel.ticker == ticker
+    ).first()
+    if not instrument:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Ticker {ticker} not found"
+        )
+    
+    transactions = db.query(OrderModel).filter(
+        OrderModel.ticker == ticker,
+        OrderModel.status.in_([OrderStatus.EXECUTED, OrderStatus.CANCELLED])
+    ).order_by(OrderModel.timestamp.desc()).limit(limit).all()
+
+    if not transactions:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No transactions found for ticker {ticker}"
+        )
+
+    return [
+        Transaction(
+            ticker=order.ticker,
+            amount=order.qty,
+            price=order.price,
+            timestamp=order.timestamp,
+            status=order.status.value  
+        )
+        for order in transactions
+    ]

@@ -1,39 +1,53 @@
 # src/models/order.py
-from pydantic import BaseModel
-from uuid import UUID, uuid4
-from enum import Enum
-from typing import Optional
+from sqlalchemy import Column, String, Integer, Enum as SqlEnum, DateTime
+from sqlalchemy.dialects.postgresql import UUID
+import uuid
+from datetime import datetime
+
+from src.schemas.schemas import OrderStatus, Direction
+from src.database import Base
 
 
-class OrderStatus(str, Enum):
-    PENDING = "pending"
-    OPEN = "open"
-    FILLED = "filled"
-    CANCELLED = "cancelled"
-    REJECTED = "rejected"
+class OrderModel(Base):
+    __tablename__ = "orders"
 
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    status = Column(SqlEnum(OrderStatus), nullable=False, default=OrderStatus.NEW)
+    user_id = Column(UUID(as_uuid=True), nullable=False)
+    timestamp = Column(DateTime, nullable=False, default=datetime.utcnow)
+    
+    direction = Column(SqlEnum(Direction), nullable=False)
+    ticker = Column(String, nullable=False)
+    qty = Column(Integer, nullable=False)
+    
+    price = Column(Integer, nullable=True)
+    
+    filled = Column(Integer, nullable=False, default=0)
 
-class OrderType(str, Enum):
-    MARKET = "market"
-    LIMIT = "limit"
+    def to_limit_order_dict(self):
+        return {
+            "id": str(self.id),
+            "status": self.status,
+            "user_id": str(self.user_id),
+            "timestamp": self.timestamp.isoformat(),
+            "filled": self.filled,
+            "body": {
+                "direction": self.direction,
+                "ticker": self.ticker,
+                "qty": self.qty,
+                "price": self.price
+            }
+        }
 
-
-class OrderSide(str, Enum):
-    BUY = "buy"
-    SELL = "sell"
-
-
-class Order(BaseModel):
-    order_id: UUID = uuid4()
-    user_id: UUID
-    symbol: str
-    order_type: OrderType
-    side: OrderSide
-    quantity: float
-    price: Optional[float] = None
-    status: OrderStatus = OrderStatus.PENDING
-
-    def __repr__(self):
-        return (
-            f"Order(order_id={self.order_id}, user_id={self.user_id}, symbol={self.symbol}, type={self.order_type}, side={self.side},"
-            f" quantity={self.quantity}, price={self.price}, status={self.status})")
+    def to_market_order_dict(self):
+        return {
+            "id": str(self.id),
+            "status": self.status,
+            "user_id": str(self.user_id),
+            "timestamp": self.timestamp.isoformat(),
+            "body": {
+                "direction": self.direction,
+                "ticker": self.ticker,
+                "qty": self.qty
+            }
+        }
