@@ -1,19 +1,20 @@
 # src/schemas/schemas.py
 import pydantic
-from pydantic import BaseModel, Field, conint
-from typing import Union, Literal
+from pydantic import BaseModel, conint
+from typing import Literal
 from uuid import UUID
 from datetime import datetime
 from enum import Enum
 
+
 class Body_deposit_api_v1_admin_balance_deposit_post(BaseModel):
-    user_id: str
+    user_id: UUID
     ticker: str
     amount: conint(gt=0)
 
 
 class Body_withdraw_api_v1_admin_balance_withdraw_post(BaseModel):
-    user_id: str
+    user_id: UUID
     ticker: str
     amount: conint(gt=0)
 
@@ -28,14 +29,20 @@ class NewUser(BaseModel):
 
 
 class Ok(BaseModel):
-    success: bool = True
+    success: Literal[True] = True
+
+
+class UserRole(str, Enum):
+    USER = "USER"
+    ADMIN = "ADMIN"
 
 
 class User(BaseModel):
-    id: str
+    id: UUID
     name: str
-    role: str
+    role: UserRole
     api_key: str
+
 
 class Direction(str, Enum):
     BUY = "BUY"
@@ -47,6 +54,7 @@ class OrderStatus(str, Enum):
     EXECUTED = "EXECUTED"
     PARTIALLY_EXECUTED = "PARTIALLY_EXECUTED"
     CANCELLED = "CANCELLED"
+
 
 class LimitOrderBody(BaseModel):
     direction: Direction
@@ -82,13 +90,16 @@ class CreateOrderResponse(BaseModel):
     success: Literal[True] = True 
     order_id: UUID
 
+
 class Level(BaseModel):
     price: int
     qty: int
 
+
 class L2OrderBook(BaseModel):
     bid_levels: list[Level]
     ask_levels: list[Level]
+
 
 class Transaction(BaseModel):
     ticker: str

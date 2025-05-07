@@ -1,21 +1,12 @@
 # src/models/order.py
 from sqlalchemy import Column, String, Integer, Enum as SqlEnum, DateTime
 from sqlalchemy.dialects.postgresql import UUID
-from enum import Enum
 import uuid
-from src.database import Base
 from datetime import datetime
-from typing import Optional, Union, Literal
 
-class OrderStatus(str, Enum):
-    NEW = "NEW"
-    EXECUTED = "EXECUTED"
-    PARTIALLY_EXECUTED = "PARTIALLY_EXECUTED"
-    CANCELLED = "CANCELLED"
+from src.schemas.schemas import OrderStatus, Direction
+from src.database import Base
 
-class Direction(str, Enum):
-    BUY = "BUY"
-    SELL = "SELL"
 
 class OrderModel(Base):
     __tablename__ = "orders"

@@ -11,7 +11,7 @@ from src.utils import (check_username,
                        aggregate_orders)
 from src.database import get_db
 
-from src.schemas.schemas import L2OrderBook, Level, Transaction
+from src.schemas.schemas import L2OrderBook, Transaction
 
 summary_tags = {
     "register": "Register",
@@ -21,6 +21,7 @@ summary_tags = {
 }
 
 router = APIRouter()
+
 
 @router.post("/api/v1/public/register", tags=["public"], response_model=User, summary=summary_tags["register"])
 def register(user: NewUser, db: Session = Depends(get_db)):
