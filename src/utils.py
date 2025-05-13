@@ -100,10 +100,13 @@ def create_instrument(instrument: Instrument, db: Session = Depends(get_db)):
 
 
 def delete_instrument_by_ticker(ticker: str, db: Session = Depends(get_db)):
+    if ticker == "RUB":
+        raise HTTPException(status_code=403, detail="Forbidden to remove the RUB ticker")
+
     db_instrument = db.query(InstrumentModel).filter_by(ticker=ticker).first()
 
     if db_instrument is None:
-        raise HTTPException(status_code=404, detail="Not Found")
+        raise HTTPException(status_code=404, detail=f"Ticker {ticker} Not Found")
 
     db.query(BalanceModel).filter_by(instrument_ticker=ticker).delete()
     db.delete(db_instrument)
@@ -208,7 +211,7 @@ def create_order_in_db(order_data: Union[LimitOrderBody, MarketOrderBody], price
 
 
 def get_order_by_id(order_id: UUID, db: Session = Depends(get_db)):
-    return db.query(OrderModel).filter(OrderModel.id == order_id).first()
+    return db.query(OrderModel).filter_by(id=order_id).first()
 
 
 def delete_order_by_id(order_id: UUID, db: Session = Depends(get_db)):
@@ -221,7 +224,7 @@ def delete_order_by_id(order_id: UUID, db: Session = Depends(get_db)):
 
 
 def get_orders_by_user(user_id: UUID, db: Session = Depends(get_db)):
-    return db.query(OrderModel).filter(OrderModel.user_id == user_id).all()
+    return db.query(OrderModel).filter_by(user_id=user_id).all()
 
 
 def list_all_orders(db: Session = Depends(get_db)):
@@ -248,7 +251,7 @@ def update_order_status(
 
 
 def get_orders_by_ticker(ticker: str, db: Session = Depends(get_db)):
-    return db.query(OrderModel).filter(OrderModel.ticker == ticker).all()
+    return db.query(OrderModel).filter_by(ticker=ticker).all()
 
 
 def get_active_orders_by_ticker(ticker: str, db: Session = Depends(get_db)):
@@ -277,26 +280,26 @@ def cancel_order(order_id: UUID, db: Session = Depends(get_db)):
 
 # тут была попытка обновлять баланс по заказам, не совсем доделано
 def update_user_balance(
-        db: Session,
         user_id: UUID,
         ticker: str,
         amount_change: int,
-        direction: Direction = None  # Новый параметр для определения направления
+        direction: Direction = None,  # Новый параметр для определения направления
+        db: Session = Depends(get_db)
 ) -> BalanceModel:
-    balance = db.query(BalanceModel).filter(
-        BalanceModel.user_id == str(user_id),
-        BalanceModel.instrument_ticker == ticker
+    db_balance = db.query(BalanceModel).filter_by(
+        user_id=user_id,
+        instrument_ticker=ticker
     ).first()
 
-    if not balance:
-        balance = BalanceModel(
-            user_id=str(user_id),
+    if db_balance is None:
+        db_balance = BalanceModel(
+            user_id=user_id,
             instrument_ticker=ticker,
             amount=0
         )
-        db.add(balance)
+        db.add(db_balance)
 
-    new_amount = balance.amount + amount_change
+    new_amount = db_balance.amount + amount_change
     # Проверяем отрицательный баланс только для операций покупки
     if direction == Direction.BUY and new_amount < 0:
         raise HTTPException(
@@ -304,7 +307,7 @@ def update_user_balance(
             detail=f"Insufficient balance for {ticker}"
         )
 
-    balance.amount = new_amount
+    db_balance.amount = new_amount
     db.commit()
-    db.refresh(balance)
-    return balance
+    db.refresh(db_balance)
+    return db_balance

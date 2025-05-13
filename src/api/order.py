@@ -51,8 +51,9 @@ async def create_order(
     auth_user = get_user_by_api_key(UUID(authorization), db)
     if auth_user is None:
         raise HTTPException(status_code=401, detail="Unauthorized")
+
     try:
-        user_id = UUID(auth_user.id)
+        user_id = auth_user.id
 
         # Проверка существования тикера в базе
         instrument = get_instrument_by_ticker(order_data.ticker, db)
@@ -101,13 +102,11 @@ def list_orders(
 ):
     if not authorization:
         raise HTTPException(status_code=401, detail="Unauthorized")
-
-    auth_user = get_user_by_api_key(authorization, db)
+    auth_user = get_user_by_api_key(UUID(authorization), db)
     if auth_user is None:
         raise HTTPException(status_code=401, detail="Unauthorized")
-    user_id = UUID(auth_user.id)
-    if isinstance(user_id, str):
-        user_id = UUID(user_id)
+
+    user_id = auth_user.id
     orders = get_orders_by_user(user_id, db)
 
     if not orders:
@@ -143,21 +142,21 @@ def list_orders(
     summary=summary_tags["get_order"]
 )
 def get_order(
-        order_id: UUID,
+        order_id: str,
         authorization: str = Depends(api_key_header),
         db: Session = Depends(get_db)
 ):
     if not authorization:
         raise HTTPException(status_code=401, detail="Unauthorized")
-
-    auth_user = get_user_by_api_key(authorization, db)
+    auth_user = get_user_by_api_key(UUID(authorization), db)
     if auth_user is None:
-        raise HTTPException(status_code=401, detail="Unauthorized 2")
-    user_id = UUID(auth_user.id)
-    order = get_order_by_id(order_id, db)
-    if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
+    user_id = auth_user.id
+    order = get_order_by_id(UUID(order_id), db)
+
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
     if order.user_id != user_id:
         raise HTTPException(status_code=403, detail="Not authorized to access this order")
 
@@ -186,28 +185,26 @@ def get_order(
     summary=summary_tags["cancel_order"]
 )
 def cancel_order_api(
-        order_id: UUID,
+        order_id: str,
         authorization: str = Depends(api_key_header),
         db: Session = Depends(get_db)
 ):
     if not authorization:
         raise HTTPException(status_code=401, detail="Unauthorized")
-    auth_user = get_user_by_api_key(authorization, db)
+    auth_user = get_user_by_api_key(UUID(authorization), db)
     if auth_user is None:
         raise HTTPException(status_code=401, detail="Unauthorized 2")
-    user_id = UUID(auth_user.id)
-    order = get_order_by_id(order_id, db)
+
+    order = get_order_by_id(UUID(order_id), db)
 
     if order.status == OrderStatus.PARTIALLY_EXECUTED or order.status == OrderStatus.NEW:
         quote_change = order.qty * order.price
         if order.direction == Direction.BUY:
-            update_user_balance(db, order.user_id, order.ticker, -quote_change,
-                                direction=order.direction)
+            update_user_balance(order.user_id, order.ticker, -quote_change, order.direction, db)
         else:
-            update_user_balance(db, order.user_id, order.ticker, quote_change,
-                                direction=order.direction)
+            update_user_balance(order.user_id, order.ticker, quote_change, order.direction, db)
 
-    cancelled_order = cancel_order(order_id, db)
+    cancelled_order = cancel_order(UUID(order_id), db)
 
     order_dict = {
         "id": cancelled_order.id,
