@@ -6,6 +6,12 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 from typing import Optional, Union
 
+from src.models.balance import BalanceModel
+from src.models.instrument import InstrumentModel
+from src.models.order import OrderModel
+from src.models.user import UserModel
+from src.database import get_db
+from src.security import api_key_header
 from src.schemas.schemas import (NewUser,
                                  Level,
                                  Instrument,
@@ -16,22 +22,12 @@ from src.schemas.schemas import (NewUser,
                                  OrderStatus,
                                  Direction
                                  )
-from src.models.balance import BalanceModel
-from src.models.instrument import InstrumentModel
-from src.models.order import OrderModel
-from src.models.user import UserModel
-from src.database import get_db
-from src.security import api_key_header
-
-
-def generate_uuid():
-    return str(uuid4())
 
 
 # users
 def register_new_user(user: NewUser, db: Session = Depends(get_db)):
-    user_id = generate_uuid()
-    token = generate_uuid()
+    user_id = uuid4()
+    token = uuid4()
 
     db_user = UserModel(
         id=user_id,
@@ -45,7 +41,7 @@ def register_new_user(user: NewUser, db: Session = Depends(get_db)):
     return db_user
 
 
-def check_user_is_admin(authorization: str = Depends(api_key_header), db: Session = Depends(get_db)):
+def check_user_is_admin(authorization: UUID = Depends(api_key_header), db: Session = Depends(get_db)):
     auth_user = get_user_by_api_key(authorization, db)
     if (auth_user is None) or not (auth_user.role == "ADMIN"):
         raise HTTPException(status_code=403, detail="Forbidden")
@@ -56,15 +52,15 @@ def check_username(username: str, db: Session = Depends(get_db)):
     return db.query(UserModel).filter_by(name=username).first()
 
 
-def get_user_by_id(user_id: str, db: Session = Depends(get_db)):
+def get_user_by_id(user_id: UUID, db: Session = Depends(get_db)):
     return db.query(UserModel).filter_by(id=user_id).first()
 
 
-def get_user_by_api_key(api_key: str, db: Session = Depends(get_db)):
+def get_user_by_api_key(api_key: UUID, db: Session = Depends(get_db)):
     return db.query(UserModel).filter_by(api_key=api_key).first()
 
 
-def delete_user_by_id(user_id: str, db: Session = Depends(get_db)):
+def delete_user_by_id(user_id: UUID, db: Session = Depends(get_db)):
     db_user = get_user_by_id(user_id, db)
 
     if db_user is None:
@@ -115,13 +111,13 @@ def delete_instrument_by_ticker(ticker: str, db: Session = Depends(get_db)):
 
 
 # balances
-def get_balances_by_user_id(user_id: str, db: Session = Depends(get_db)):
+def get_balances_by_user_id(user_id: UUID, db: Session = Depends(get_db)):
     db_balances = db.query(BalanceModel).filter_by(user_id=user_id).all()
     balances = {b.instrument_ticker: b.amount for b in db_balances}
     return balances
 
 
-def check_balance_record(user_id: str, ticker: str, db: Session = Depends(get_db)):
+def check_balance_record(user_id: UUID, ticker: str, db: Session = Depends(get_db)):
     return db.query(BalanceModel).filter_by(user_id=user_id).filter_by(instrument_ticker=ticker).first()
 
 

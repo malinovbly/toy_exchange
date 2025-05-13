@@ -1,6 +1,7 @@
 # src/api/admin.py
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from uuid import UUID
 
 from src.schemas.schemas import (User,
                                  Instrument,
@@ -34,13 +35,13 @@ def delete_user(user_id: str, authorization: str = Depends(api_key_header), db: 
     if not authorization:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    auth_user = get_user_by_api_key(authorization, db)
+    auth_user = get_user_by_api_key(UUID(authorization), db)
 
     if auth_user is None:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    if (auth_user.role == "ADMIN") or (auth_user.id == user_id):
-        return delete_user_by_id(user_id, db)
+    if (auth_user.role == "ADMIN") or (auth_user.id == UUID(user_id)):
+        return delete_user_by_id(UUID(user_id), db)
 
     raise HTTPException(status_code=403, detail="Forbidden")
 
@@ -50,7 +51,7 @@ def add_instrument(instrument: Instrument, authorization: str = Depends(api_key_
     if not authorization:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    if check_user_is_admin(authorization, db):
+    if check_user_is_admin(UUID(authorization), db):
         create_instrument(instrument, db)
 
     return Ok
@@ -61,7 +62,7 @@ def delete_instrument(ticker: str, authorization: str = Depends(api_key_header),
     if not authorization:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    if check_user_is_admin(authorization, db):
+    if check_user_is_admin(UUID(authorization), db):
         delete_instrument_by_ticker(ticker, db)
 
     return Ok
@@ -72,7 +73,7 @@ def deposit(request: Body_deposit_api_v1_admin_balance_deposit_post, authorizati
     if not authorization:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    if check_user_is_admin(authorization, db):
+    if check_user_is_admin(UUID(authorization), db):
         user_balance_deposit(request, db)
 
     return Ok
@@ -83,7 +84,7 @@ def withdraw(request: Body_withdraw_api_v1_admin_balance_withdraw_post, authoriz
     if not authorization:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    if check_user_is_admin(authorization, db):
+    if check_user_is_admin(UUID(authorization), db):
         user_balance_withdraw(request, db)
 
     return Ok

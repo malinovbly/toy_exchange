@@ -1,6 +1,7 @@
 # src/api/balance.py
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from uuid import UUID
 from typing import Dict
 
 from src.utils import get_user_by_api_key, get_balances_by_user_id
@@ -20,8 +21,8 @@ def get_balances(authorization: str = Depends(api_key_header), db: Session = Dep
     if not authorization:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    auth_user = get_user_by_api_key(authorization, db)
+    auth_user = get_user_by_api_key(UUID(authorization), db)
     if auth_user is None:
-        raise HTTPException(status_code=401, detail="Unauthorized 2")
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
     return get_balances_by_user_id(auth_user.id, db)

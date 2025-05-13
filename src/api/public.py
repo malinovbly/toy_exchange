@@ -2,16 +2,16 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy.orm import Session
 from typing import List
+
 from src.models.order import OrderModel, OrderStatus, Direction
 from src.models.instrument import InstrumentModel
-from src.schemas.schemas import NewUser, User, Instrument
+from src.schemas.schemas import NewUser, User, Instrument, L2OrderBook, Transaction
 from src.utils import (check_username,
                        get_all_instruments,
                        register_new_user,
                        aggregate_orders)
 from src.database import get_db
 
-from src.schemas.schemas import L2OrderBook, Transaction
 
 summary_tags = {
     "register": "Register",

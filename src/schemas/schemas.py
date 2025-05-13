@@ -41,7 +41,7 @@ class User(BaseModel):
     id: UUID
     name: str
     role: UserRole
-    api_key: str
+    api_key: UUID
 
 
 class Direction(str, Enum):

@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import List, Optional, Union
+from fastapi import APIRouter, Depends, HTTPException
+from typing import List, Union
 from uuid import UUID
 from sqlalchemy.orm import Session
 
-from src.database import get_db
-from src.models.instrument import InstrumentModel
 from src.api.public import get_orderbook
+from src.database import get_db
+from src.security import api_key_header
 from src.schemas.schemas import (
     LimitOrderBody,
     MarketOrderBody,
@@ -15,7 +15,6 @@ from src.schemas.schemas import (
     OrderStatus,
     Direction
 )
-from src.security import api_key_header
 from src.utils import (
     create_order_in_db,
     get_order_by_id,
@@ -23,7 +22,8 @@ from src.utils import (
     get_orders_by_user,
     cancel_order,
     update_order_status,
-    update_user_balance
+    update_user_balance,
+    get_instrument_by_ticker
 )
 
 summary_tags = {
@@ -39,7 +39,7 @@ router = APIRouter()
 @router.post(
     "/api/v1/order", tags=["order"],
     response_model=CreateOrderResponse,
-    summary="Create Order"
+    summary=summary_tags["create_order"]
 )
 async def create_order(
         order_data: Union[LimitOrderBody, MarketOrderBody],
@@ -48,21 +48,18 @@ async def create_order(
 ):
     if not authorization:
         raise HTTPException(status_code=401, detail="Unauthorized")
-    auth_user = get_user_by_api_key(authorization, db)
+    auth_user = get_user_by_api_key(UUID(authorization), db)
     if auth_user is None:
-        raise HTTPException(status_code=401, detail="Unauthorized 2")
+        raise HTTPException(status_code=401, detail="Unauthorized")
     try:
         user_id = UUID(auth_user.id)
 
         # Проверка существования тикера в базе
-        instrument = db.query(InstrumentModel).filter(
-            InstrumentModel.ticker == order_data.ticker
-        ).first()
-
-        if not instrument:
+        instrument = get_instrument_by_ticker(order_data.ticker, db)
+        if instrument is None:
             raise HTTPException(
-                status_code=400,
-                detail=f"Ticker {order_data.ticker} not found in instruments"
+                status_code=404,
+                detail=f"Ticker '{order_data.ticker}' not found in instruments"
             )
 
         # Рыночная заявка
@@ -97,9 +94,8 @@ async def create_order(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/api/v1/order", tags=["order"], response_model=List[Union[LimitOrder, MarketOrder]], summary="List Orders")
+@router.get("/api/v1/order", tags=["order"], response_model=List[Union[LimitOrder, MarketOrder]], summary=summary_tags["list_orders"])
 def list_orders(
-        user_id: Optional[UUID] = Query(None),
         authorization: str = Depends(api_key_header),
         db: Session = Depends(get_db)
 ):
@@ -108,7 +104,7 @@ def list_orders(
 
     auth_user = get_user_by_api_key(authorization, db)
     if auth_user is None:
-        raise HTTPException(status_code=401, detail="Unauthorized 2")
+        raise HTTPException(status_code=401, detail="Unauthorized")
     user_id = UUID(auth_user.id)
     if isinstance(user_id, str):
         user_id = UUID(user_id)
@@ -144,7 +140,7 @@ def list_orders(
 @router.get(
     "/api/v1/order/{order_id}", tags=["order"],
     response_model=Union[LimitOrder, MarketOrder],
-    summary="Get Order"
+    summary=summary_tags["get_order"]
 )
 def get_order(
         order_id: UUID,
@@ -187,7 +183,7 @@ def get_order(
 @router.delete(
     "/api/v1/order/{order_id}", tags=["order"],
     response_model=Union[LimitOrder, MarketOrder],
-    summary="Cancel Order"
+    summary=summary_tags["cancel_order"]
 )
 def cancel_order_api(
         order_id: UUID,
