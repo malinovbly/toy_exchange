@@ -27,6 +27,7 @@ router = APIRouter()
 def register(user: NewUser, db: Session = Depends(get_db)):
     if check_username(user.name, db) is not None:
         raise HTTPException(status_code=409, detail="Username already exists")
+
     return register_new_user(user, db)
 
 

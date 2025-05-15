@@ -40,7 +40,7 @@ def delete_user(user_id: str, authorization: str = Depends(api_key_header), db: 
     if auth_user is None:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    if (auth_user.role == "ADMIN") or (auth_user.id == UUID(user_id)):
+    if auth_user.role == "ADMIN":
         return delete_user_by_id(UUID(user_id), db)
 
     raise HTTPException(status_code=403, detail="Forbidden")
