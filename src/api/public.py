@@ -5,12 +5,13 @@ from typing import List
 
 from src.models.order import OrderModel, OrderStatus, Direction
 from src.models.instrument import InstrumentModel
+from src.models.transaction import TransactionModel
 from src.schemas.schemas import NewUser, User, Instrument, L2OrderBook, Transaction
 from src.utils import (check_username,
                        get_all_instruments,
                        register_new_user,
                        aggregate_orders)
-from src.database.database import get_db
+from src.database import get_db
 
 
 summary_tags = {
@@ -27,7 +28,6 @@ router = APIRouter()
 def register(user: NewUser, db: Session = Depends(get_db)):
     if check_username(user.name, db) is not None:
         raise HTTPException(status_code=409, detail="Username already exists")
-
     return register_new_user(user, db)
 
 
@@ -50,13 +50,15 @@ def get_orderbook(
     bids = db.query(OrderModel).filter(
         OrderModel.ticker == ticker,
         OrderModel.direction == Direction.BUY,
-        OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED])
+        OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED]),
+        OrderModel.price != None
     ).order_by(OrderModel.price.desc()).limit(limit).all()
 
     asks = db.query(OrderModel).filter(
         OrderModel.ticker == ticker,
         OrderModel.direction == Direction.SELL,
-        OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED])
+        OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED]),
+        OrderModel.price != None
     ).order_by(OrderModel.price.asc()).limit(limit).all()
 
     bid_levels = aggregate_orders(bids)
@@ -84,11 +86,10 @@ def get_transaction_history(
             status_code=404,
             detail=f"Ticker {ticker} not found"
         )
-    
-    transactions = db.query(OrderModel).filter(
-        OrderModel.ticker == ticker,
-        OrderModel.status.in_([OrderStatus.EXECUTED, OrderStatus.CANCELLED])
-    ).order_by(OrderModel.timestamp.desc()).limit(limit).all()
+
+    transactions = db.query(TransactionModel).filter(
+        TransactionModel.ticker == ticker
+    ).order_by(TransactionModel.timestamp.desc()).limit(limit).all()
 
     if not transactions:
         raise HTTPException(
@@ -98,11 +99,11 @@ def get_transaction_history(
 
     return [
         Transaction(
-            ticker=order.ticker,
-            amount=order.qty,
-            price=order.price,
-            timestamp=order.timestamp,
-            status=order.status.value  
+            ticker=tx.ticker,
+            amount=tx.qty,
+            price=tx.price,
+            timestamp=tx.timestamp
         )
-        for order in transactions
+        for tx in transactions
     ]
+

@@ -5,12 +5,13 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session
 from datetime import datetime
 from typing import Optional, Union
-
+from typing import List
 from src.models.balance import BalanceModel
 from src.models.instrument import InstrumentModel
 from src.models.order import OrderModel
 from src.models.user import UserModel
-from src.database.database import get_db
+from src.models.transaction import TransactionModel
+from src.database import get_db
 from src.security import api_key_header
 from src.schemas.schemas import (NewUser,
                                  Level,
@@ -32,7 +33,7 @@ def register_new_user(user: NewUser, db: Session = Depends(get_db)):
     db_user = UserModel(
         id=user_id,
         name=user.name,
-        role="USER",
+        role="ADMIN",
         api_key=token
     )
     db.add(db_user)
@@ -177,8 +178,8 @@ def user_balance_withdraw(request: Body_withdraw_api_v1_admin_balance_withdraw_p
             raise HTTPException(status_code=403, detail="Insufficient Funds")
 
 
-# Orderbook
-def aggregate_orders(orders):
+# orderbook
+def aggregate_orders(orders: List[OrderModel]) -> List[Level]:
     levels = {}
     for order in orders:
         remaining_qty = order.qty - order.filled
@@ -188,6 +189,15 @@ def aggregate_orders(orders):
             levels[order.price] = remaining_qty
     return [Level(price=price, qty=qty) for price, qty in levels.items()]
 
+# transactions
+def record_transaction(db: Session, ticker: str, price: int, qty: int):
+    transaction = TransactionModel(
+        ticker=ticker,
+        price=price,
+        qty=qty,
+        timestamp=datetime.utcnow()
+    )
+    db.add(transaction)
 
 # orders
 def create_order_in_db(order_data: Union[LimitOrderBody, MarketOrderBody], price: int, user_id: UUID,
@@ -278,12 +288,11 @@ def cancel_order(order_id: UUID, db: Session = Depends(get_db)):
     return db_order
 
 
-# тут была попытка обновлять баланс по заказам, не совсем доделано
 def update_user_balance(
         user_id: UUID,
         ticker: str,
         amount_change: int,
-        direction: Direction = None,  # Новый параметр для определения направления
+        direction: Direction = None,  
         db: Session = Depends(get_db)
 ) -> BalanceModel:
     db_balance = db.query(BalanceModel).filter_by(
@@ -300,8 +309,8 @@ def update_user_balance(
         db.add(db_balance)
 
     new_amount = db_balance.amount + amount_change
-    # Проверяем отрицательный баланс только для операций покупки
-    if direction == Direction.BUY and new_amount < 0:
+    # Выдается и при слуаче нехватки баланса юзера, и при случае нехватки баланса другого трейдера
+    if new_amount < 0:
         raise HTTPException(
             status_code=400,
             detail=f"Insufficient balance for {ticker}"
@@ -311,3 +320,159 @@ def update_user_balance(
     db.commit()
     db.refresh(db_balance)
     return db_balance
+
+
+def process_trade(
+    db: Session,
+    is_buy: bool,
+    user_id: int,
+    counterparty_id: int,
+    ticker: str,
+    trade_qty: int,
+    trade_price: int,
+):
+    trade_amount = trade_qty * trade_price
+    ticker_rub = "RUB"
+
+    if is_buy:
+        update_user_balance(user_id, ticker_rub, -trade_amount, db=db)
+        update_user_balance(user_id, ticker, trade_qty, db=db)
+        update_user_balance(counterparty_id, ticker, -trade_qty, db=db)
+        update_user_balance(counterparty_id, ticker_rub, trade_amount, db=db)
+    else:
+        update_user_balance(user_id, ticker, -trade_qty, db=db)
+        update_user_balance(user_id, ticker_rub, trade_amount, db=db)
+        update_user_balance(counterparty_id, ticker_rub, -trade_amount, db=db)
+        update_user_balance(counterparty_id, ticker, trade_qty, db=db)
+
+    # Записываем транзакцию
+    record_transaction(db, ticker, trade_price, trade_qty)
+
+
+def update_order_status_and_filled(db: Session, order: OrderModel, filled_increment: int):
+    order.filled += filled_increment
+    if order.filled == order.qty:
+        order.status = OrderStatus.EXECUTED
+    elif order.filled > 0:
+        order.status = OrderStatus.PARTIALLY_EXECUTED
+    else:
+        order.status = OrderStatus.NEW
+
+    db.add(order)
+
+
+def execute_market_order(market_order: OrderModel, db: Session):
+    remaining_qty = market_order.qty
+    ticker = market_order.ticker
+    direction = market_order.direction
+    user_id = market_order.user_id
+
+    is_buy = direction == Direction.BUY
+    opposite_direction = Direction.SELL if is_buy else Direction.BUY
+    limit_orders = (
+        db.query(OrderModel)
+          .filter(
+              OrderModel.ticker == ticker,
+              OrderModel.direction == opposite_direction,
+              OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED]),
+              OrderModel.price != None        
+          )
+          .order_by(OrderModel.price.asc() if is_buy else OrderModel.price.desc())
+          .all()
+    )
+
+    total_filled = 0
+
+    for limit_order in limit_orders:
+        available_qty = limit_order.qty - limit_order.filled
+        if available_qty <= 0:
+            continue
+
+        trade_qty = min(remaining_qty, available_qty)
+        trade_price = limit_order.price
+        seller_id = limit_order.user_id
+
+        process_trade(db, is_buy, user_id, seller_id, ticker, trade_qty, trade_price)
+        update_order_status_and_filled(db, limit_order, trade_qty)
+
+        remaining_qty -= trade_qty
+        total_filled += trade_qty
+
+        if remaining_qty == 0:
+            break
+
+    if total_filled == 0:
+        raise HTTPException(status_code=400, detail="No matching orders in the orderbook")
+
+    # обновляем сам рыночный ордер
+    market_order.filled = total_filled
+    market_order.status = (
+        OrderStatus.EXECUTED
+        if total_filled == market_order.qty
+        else OrderStatus.PARTIALLY_EXECUTED
+    )
+    db.add(market_order)
+
+    db.commit()
+    db.refresh(market_order)
+    return market_order
+
+
+
+def execute_limit_order(limit_order: OrderModel, db: Session):
+    remaining_qty = limit_order.qty
+    ticker = limit_order.ticker
+    direction = limit_order.direction
+    user_id = limit_order.user_id
+
+    is_buy = direction == Direction.BUY
+    opposite_direction = Direction.SELL if is_buy else Direction.BUY
+
+    matching_orders = (
+        db.query(OrderModel)
+        .filter(
+            OrderModel.ticker == ticker,
+            OrderModel.direction == opposite_direction,
+            OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED]),
+            OrderModel.price != None,
+            OrderModel.price <= limit_order.price if is_buy else OrderModel.price >= limit_order.price
+        )
+        .order_by(OrderModel.price.asc() if is_buy else OrderModel.price.desc())
+        .all()
+    )
+
+    total_filled = 0
+
+    for match in matching_orders:
+        available_qty = match.qty - match.filled
+        if available_qty <= 0:
+            continue
+
+        trade_qty = min(remaining_qty, available_qty)
+        trade_price = match.price
+        counterparty_id = match.user_id
+
+        process_trade(db, is_buy, user_id, counterparty_id, ticker, trade_qty, trade_price)
+        update_order_status_and_filled(db, match, trade_qty)
+
+        remaining_qty -= trade_qty
+        total_filled += trade_qty
+
+        if remaining_qty == 0:
+            break
+
+    # Обновление исходной лимитной заявки
+    limit_order.filled = total_filled
+    if total_filled == 0:
+        limit_order.status = OrderStatus.NEW  
+    elif total_filled < limit_order.qty:
+        limit_order.status = OrderStatus.PARTIALLY_EXECUTED
+    else:
+        limit_order.status = OrderStatus.EXECUTED
+
+    db.add(limit_order)
+    db.commit()
+    db.refresh(limit_order)
+
+    return limit_order
+

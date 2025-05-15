@@ -4,7 +4,7 @@ from sqlalchemy.dialects.postgresql import UUID
 import uuid
 
 from src.schemas.schemas import UserRole
-from src.database.database import Base
+from src.database import Base
 
 
 class UserModel(Base):
