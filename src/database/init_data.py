@@ -1,4 +1,4 @@
-from database.database import engine, Base, SessionLocal
+from src.database.database import engine, Base, SessionLocal
 from src.models.instrument import InstrumentModel
 
 

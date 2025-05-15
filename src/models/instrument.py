@@ -1,7 +1,7 @@
 # src/models/instrument.py
 from sqlalchemy import Column, String
 
-from database.database import Base
+from src.database.database import Base
 
 
 class InstrumentModel(Base):

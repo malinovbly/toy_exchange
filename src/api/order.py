@@ -4,7 +4,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from src.api.public import get_orderbook
-from database.database import get_db
+from src.database.database import get_db
 from src.security import api_key_header
 from src.schemas.schemas import (
     LimitOrderBody,
