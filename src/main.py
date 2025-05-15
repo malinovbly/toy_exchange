@@ -3,8 +3,7 @@ from fastapi import FastAPI
 from contextlib import asynccontextmanager
 
 from src.api import main_router
-from src.database import engine, Base, SessionLocal
-from src.models.instrument import InstrumentModel
+from src.database.init_data import init_db
 
 
 global_tags = [
@@ -21,19 +20,6 @@ global_tags = [
         "name": "admin"
     }
 ]
-
-
-def init_db():
-    Base.metadata.create_all(bind=engine)
-    db = SessionLocal()
-    try:
-        db_ticker = db.query(InstrumentModel).filter_by(ticker="RUB").first()
-        if db_ticker is None:
-            rub_ticker = InstrumentModel(name="rubles", ticker="RUB")
-            db.add(rub_ticker)
-            db.commit()
-    finally:
-        db.close()
 
 
 @asynccontextmanager

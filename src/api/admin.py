@@ -15,7 +15,7 @@ from src.utils import (get_user_by_api_key,
                        delete_instrument_by_ticker,
                        user_balance_deposit,
                        user_balance_withdraw)
-from src.database import get_db
+from database.database import get_db
 from src.security import api_key_header
 
 

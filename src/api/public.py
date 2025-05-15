@@ -10,7 +10,7 @@ from src.utils import (check_username,
                        get_all_instruments,
                        register_new_user,
                        aggregate_orders)
-from src.database import get_db
+from database.database import get_db
 
 
 summary_tags = {

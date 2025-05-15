@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 
 from src.schemas.schemas import OrderStatus, Direction
-from src.database import Base
+from database.database import Base
 
 
 class OrderModel(Base):

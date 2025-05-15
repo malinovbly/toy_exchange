@@ -2,7 +2,7 @@
 from sqlalchemy import Column, String, ForeignKey, Integer
 from sqlalchemy.dialects.postgresql import UUID
 
-from src.database import Base
+from database.database import Base
 
 
 class BalanceModel(Base):

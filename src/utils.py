@@ -10,7 +10,7 @@ from src.models.balance import BalanceModel
 from src.models.instrument import InstrumentModel
 from src.models.order import OrderModel
 from src.models.user import UserModel
-from src.database import get_db
+from database.database import get_db
 from src.security import api_key_header
 from src.schemas.schemas import (NewUser,
                                  Level,
