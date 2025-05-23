@@ -12,8 +12,6 @@ __pycache__/
 .idea/
 .vscode/
 
-*.db
-
 *.log
 *.tmp
 
