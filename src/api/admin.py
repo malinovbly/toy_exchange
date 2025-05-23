@@ -35,15 +35,16 @@ def delete_user(user_id: str, authorization: str = Depends(api_key_header), db: 
     if not authorization:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    auth_user = get_user_by_api_key(UUID(authorization), db)
+    try:
+        auth_user = get_user_by_api_key(UUID(authorization), db)
+        if auth_user is None:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        if auth_user.role == "ADMIN":
+            return delete_user_by_id(UUID(user_id), db)
+        raise HTTPException(status_code=403, detail="Forbidden")
 
-    if auth_user is None:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
-    if auth_user.role == "ADMIN":
-        return delete_user_by_id(UUID(user_id), db)
-
-    raise HTTPException(status_code=403, detail="Forbidden")
+    except Exception:
+        raise HTTPException(status_code=404, detail="Invalid Authorization")
 
 
 @router.post(path="/api/v1/admin/instrument", tags=["admin"], response_model=Ok, summary=summary_tags["add_instrument"])
@@ -51,10 +52,13 @@ def add_instrument(instrument: Instrument, authorization: str = Depends(api_key_
     if not authorization:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    if check_user_is_admin(UUID(authorization), db):
-        create_instrument(instrument, db)
+    try:
+        if check_user_is_admin(UUID(authorization), db):
+            create_instrument(instrument, db)
+        return Ok
 
-    return Ok
+    except Exception:
+        raise HTTPException(status_code=404, detail="Invalid Authorization")
 
 
 @router.delete(path="/api/v1/admin/instrument/{ticker}", tags=["admin"], response_model=Ok, summary=summary_tags["delete_instrument"])
@@ -62,10 +66,13 @@ def delete_instrument(ticker: str, authorization: str = Depends(api_key_header),
     if not authorization:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    if check_user_is_admin(UUID(authorization), db):
-        delete_instrument_by_ticker(ticker, db)
+    try:
+        if check_user_is_admin(UUID(authorization), db):
+            delete_instrument_by_ticker(ticker, db)
+        return Ok
 
-    return Ok
+    except Exception:
+        raise HTTPException(status_code=404, detail="Invalid Authorization")
 
 
 @router.post(path="/api/v1/admin/balance/deposit", tags=["admin", "balance"], response_model=Ok, summary=summary_tags["deposit"])
@@ -73,10 +80,13 @@ def deposit(request: Body_deposit_api_v1_admin_balance_deposit_post, authorizati
     if not authorization:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    if check_user_is_admin(UUID(authorization), db):
-        user_balance_deposit(request, db)
+    try:
+        if check_user_is_admin(UUID(authorization), db):
+            user_balance_deposit(request, db)
+        return Ok
 
-    return Ok
+    except Exception:
+        raise HTTPException(status_code=404, detail="Invalid Authorization")
 
 
 @router.post(path="/api/v1/admin/balance/withdraw", tags=["admin", "balance"], response_model=Ok, summary=summary_tags["withdraw"])
@@ -84,7 +94,10 @@ def withdraw(request: Body_withdraw_api_v1_admin_balance_withdraw_post, authoriz
     if not authorization:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    if check_user_is_admin(UUID(authorization), db):
-        user_balance_withdraw(request, db)
+    try:
+        if check_user_is_admin(UUID(authorization), db):
+            user_balance_withdraw(request, db)
+        return Ok
 
-    return Ok
+    except Exception:
+        raise HTTPException(status_code=404, detail="Invalid Authorization")
