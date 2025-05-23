@@ -63,12 +63,9 @@ async def create_order(
             )
 
         # Проверка кол-ва тикера
-        balance = db.query(BalanceModel).filter(
-            BalanceModel.user_id == user_id,
-            BalanceModel.instrument_ticker == order_data.ticker
-        ).first()
+        balance = db.query(BalanceModel).filter_by(user_id=user_id, instrument_ticker=order_data.ticker).first()
 
-        if not balance or balance.amount < order_data.qty:
+        if (not balance or balance.amount < order_data.qty) and order_data.direction == "SELL":
             raise HTTPException(
                 status_code=400,
                 detail=f"Insufficient {order_data.ticker} balance for order"
@@ -108,7 +105,7 @@ def list_orders(
     orders = get_orders_by_user(user_id, db)
 
     if not orders:
-        raise HTTPException(status_code=404, detail="No orders found for this user")
+        return []
 
     result = []
     for order in orders:
