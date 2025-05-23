@@ -1,8 +1,9 @@
 # src/main.py
 from fastapi import FastAPI
+from contextlib import asynccontextmanager
 
 from src.api import main_router
-from src.database import engine, Base
+from src.database.init_data import init_db
 
 
 global_tags = [
@@ -20,10 +21,16 @@ global_tags = [
     }
 ]
 
-Base.metadata.create_all(bind=engine)
 
-app = FastAPI(openapi_tags=global_tags)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(lifespan=lifespan, openapi_tags=global_tags)
 app.include_router(main_router)
+
 
 if __name__ == "__main__":
     import uvicorn

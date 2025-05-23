@@ -4,8 +4,7 @@ from typing import List, Union
 from uuid import UUID
 from sqlalchemy.orm import Session
 
-from src.api.public import get_orderbook
-from src.database import get_db
+from src.database.database import get_db
 from src.security import api_key_header
 from src.schemas.schemas import (
     LimitOrderBody,
@@ -13,10 +12,7 @@ from src.schemas.schemas import (
     LimitOrder,
     MarketOrder,
     CreateOrderResponse,
-    OrderStatus,
-    Direction
 )
-
 from src.models.balance import BalanceModel
 from src.utils import (
     create_order_in_db,
@@ -24,10 +20,7 @@ from src.utils import (
     get_user_by_api_key,
     get_orders_by_user,
     cancel_order,
-    update_order_status,
-    update_user_balance,
     get_instrument_by_ticker,
-    delete_order_by_id,
     execute_market_order,
     execute_limit_order
 )
@@ -68,25 +61,25 @@ async def create_order(
                 status_code=404,
                 detail=f"Ticker '{order_data.ticker}' not found in instruments"
             )
-            
+
         # Проверка кол-ва тикера
         balance = db.query(BalanceModel).filter(
             BalanceModel.user_id == user_id,
             BalanceModel.instrument_ticker == order_data.ticker
         ).first()
-        
+
         if not balance or balance.amount < order_data.qty:
             raise HTTPException(
                 status_code=400,
                 detail=f"Insufficient {order_data.ticker} balance for order"
             )
-        
+
         # Рыночная заявка
         if isinstance(order_data, MarketOrderBody):
             db_order = create_order_in_db(order_data, price=None, user_id=user_id, db=db)
             executed_order = execute_market_order(db_order, db)
             return CreateOrderResponse(order_id=executed_order.id)
-        
+
         # Лимитная заявка
         else:
             db_order = create_order_in_db(order_data, price=order_data.price, user_id=user_id, db=db)
@@ -200,7 +193,6 @@ def delete_order_api(
     if auth_user is None:
         raise HTTPException(status_code=401, detail="Unauthorized 2")
 
-    order = get_order_by_id(UUID(order_id), db)
     cancelled_order = cancel_order(UUID(order_id), db)
 
     order_dict = {

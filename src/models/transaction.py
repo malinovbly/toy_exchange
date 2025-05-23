@@ -1,7 +1,8 @@
 # src/models/transaction.py
 from sqlalchemy import Column, Integer, String, DateTime
 from datetime import datetime
-from src.database import Base
+from src.database.database import Base
+
 
 class TransactionModel(Base):
     __tablename__ = "transactions"

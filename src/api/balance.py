@@ -6,7 +6,7 @@ from typing import Dict
 
 from src.utils import get_user_by_api_key, get_balances_by_user_id
 from src.security import api_key_header
-from src.database import get_db
+from src.database.database import get_db
 
 
 summary_tags = {
