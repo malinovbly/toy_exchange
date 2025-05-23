@@ -15,7 +15,7 @@ from src.utils import (get_user_by_api_key,
                        delete_instrument_by_ticker,
                        user_balance_deposit,
                        user_balance_withdraw)
-from src.database.database import get_db
+from src.database import get_db
 from src.security import api_key_header
 
 
@@ -40,7 +40,7 @@ def delete_user(user_id: str, authorization: str = Depends(api_key_header), db: 
     if auth_user is None:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    if auth_user.role == "ADMIN":
+    if (auth_user.role == "ADMIN") or (auth_user.id == UUID(user_id)):
         return delete_user_by_id(UUID(user_id), db)
 
     raise HTTPException(status_code=403, detail="Forbidden")

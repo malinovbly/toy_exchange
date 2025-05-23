@@ -1,10 +1,11 @@
+# src/api/order.py
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Union
 from uuid import UUID
 from sqlalchemy.orm import Session
 
 from src.api.public import get_orderbook
-from src.database.database import get_db
+from src.database import get_db
 from src.security import api_key_header
 from src.schemas.schemas import (
     LimitOrderBody,
@@ -15,6 +16,8 @@ from src.schemas.schemas import (
     OrderStatus,
     Direction
 )
+
+from src.models.balance import BalanceModel
 from src.utils import (
     create_order_in_db,
     get_order_by_id,
@@ -23,7 +26,10 @@ from src.utils import (
     cancel_order,
     update_order_status,
     update_user_balance,
-    get_instrument_by_ticker
+    get_instrument_by_ticker,
+    delete_order_by_id,
+    execute_market_order,
+    execute_limit_order
 )
 
 summary_tags = {
@@ -62,31 +68,30 @@ async def create_order(
                 status_code=404,
                 detail=f"Ticker '{order_data.ticker}' not found in instruments"
             )
-
+            
+        # Проверка кол-ва тикера
+        balance = db.query(BalanceModel).filter(
+            BalanceModel.user_id == user_id,
+            BalanceModel.instrument_ticker == order_data.ticker
+        ).first()
+        
+        if not balance or balance.amount < order_data.qty:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Insufficient {order_data.ticker} balance for order"
+            )
+        
         # Рыночная заявка
         if isinstance(order_data, MarketOrderBody):
-            orderbook = get_orderbook(order_data.ticker, limit=10, db=db)
-            if order_data.direction == Direction.BUY:
-                if not orderbook.ask_levels:
-                    raise HTTPException(status_code=400, detail="No available asks in orderbook")
-                market_price = str(orderbook.ask_levels[0].price)
-            else:
-                if not orderbook.bid_levels:
-                    raise HTTPException(status_code=400, detail="No available bids in orderbook")
-                market_price = str(orderbook.bid_levels[0].price)
-
-            db_order = create_order_in_db(order_data, market_price, user_id, db)
-            db_order = update_order_status(
-                db_order.id,
-                OrderStatus.NEW,
-                order_data.qty,
-                db
-            )
+            db_order = create_order_in_db(order_data, price=None, user_id=user_id, db=db)
+            executed_order = execute_market_order(db_order, db)
+            return CreateOrderResponse(order_id=executed_order.id)
+        
         # Лимитная заявка
         else:
-            db_order = create_order_in_db(order_data, order_data.price, user_id, db)
-
-        return CreateOrderResponse(order_id=db_order.id)
+            db_order = create_order_in_db(order_data, price=order_data.price, user_id=user_id, db=db)
+            executed_order = execute_limit_order(db_order, db)
+            return CreateOrderResponse(order_id=executed_order.id)
 
     except HTTPException as he:
         raise he
@@ -184,7 +189,7 @@ def get_order(
     response_model=Union[LimitOrder, MarketOrder],
     summary=summary_tags["cancel_order"]
 )
-def cancel_order_api(
+def delete_order_api(
         order_id: str,
         authorization: str = Depends(api_key_header),
         db: Session = Depends(get_db)
@@ -196,14 +201,6 @@ def cancel_order_api(
         raise HTTPException(status_code=401, detail="Unauthorized 2")
 
     order = get_order_by_id(UUID(order_id), db)
-
-    if order.status == OrderStatus.PARTIALLY_EXECUTED or order.status == OrderStatus.NEW:
-        quote_change = order.qty * order.price
-        if order.direction == Direction.BUY:
-            update_user_balance(order.user_id, order.ticker, -quote_change, order.direction, db)
-        else:
-            update_user_balance(order.user_id, order.ticker, quote_change, order.direction, db)
-
     cancelled_order = cancel_order(UUID(order_id), db)
 
     order_dict = {
