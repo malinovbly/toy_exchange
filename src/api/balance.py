@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from uuid import UUID
 from typing import Dict
 
-from src.utils import get_user_by_api_key, get_balances_by_user_id
+from src.utils import get_user_by_api_key, get_balances_by_user_id, get_api_key
 from src.security import api_key_header
 from src.database.database import get_db
 
@@ -22,7 +22,8 @@ def get_balances(authorization: str = Depends(api_key_header), db: Session = Dep
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     try:
-        auth_user = get_user_by_api_key(UUID(authorization), db)
+        api_key = get_api_key(authorization)
+        auth_user = get_user_by_api_key(UUID(api_key), db)
         if auth_user is None:
             raise HTTPException(status_code=401, detail="Unauthorized")
         return get_balances_by_user_id(auth_user.id, db)

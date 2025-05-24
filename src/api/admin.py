@@ -14,7 +14,8 @@ from src.utils import (get_user_by_api_key,
                        create_instrument,
                        delete_instrument_by_ticker,
                        user_balance_deposit,
-                       user_balance_withdraw)
+                       user_balance_withdraw,
+                       get_api_key)
 from src.database.database import get_db
 from src.security import api_key_header
 
@@ -36,7 +37,8 @@ def delete_user(user_id: str, authorization: str = Depends(api_key_header), db: 
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     try:
-        auth_user = get_user_by_api_key(UUID(authorization), db)
+        api_key = get_api_key(authorization)
+        auth_user = get_user_by_api_key(UUID(api_key), db)
         if auth_user is None:
             raise HTTPException(status_code=401, detail="Unauthorized")
         if auth_user.role == "ADMIN":
@@ -53,7 +55,8 @@ def add_instrument(instrument: Instrument, authorization: str = Depends(api_key_
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     try:
-        if check_user_is_admin(UUID(authorization), db):
+        api_key = get_api_key(authorization)
+        if check_user_is_admin(UUID(api_key), db):
             create_instrument(instrument, db)
         return Ok
 
@@ -67,7 +70,8 @@ def delete_instrument(ticker: str, authorization: str = Depends(api_key_header),
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     try:
-        if check_user_is_admin(UUID(authorization), db):
+        api_key = get_api_key(authorization)
+        if check_user_is_admin(UUID(api_key), db):
             delete_instrument_by_ticker(ticker, db)
         return Ok
 
@@ -81,7 +85,8 @@ def deposit(request: Body_deposit_api_v1_admin_balance_deposit_post, authorizati
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     try:
-        if check_user_is_admin(UUID(authorization), db):
+        api_key = get_api_key(authorization)
+        if check_user_is_admin(UUID(api_key), db):
             user_balance_deposit(request, db)
         return Ok
 
@@ -95,7 +100,8 @@ def withdraw(request: Body_withdraw_api_v1_admin_balance_withdraw_post, authoriz
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     try:
-        if check_user_is_admin(UUID(authorization), db):
+        api_key = get_api_key(authorization)
+        if check_user_is_admin(UUID(api_key), db):
             user_balance_withdraw(request, db)
         return Ok
 

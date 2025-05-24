@@ -42,6 +42,14 @@ def register_new_user(user: NewUser, db: Session = Depends(get_db)):
     return db_user
 
 
+def get_api_key(authorization: str):
+    token = authorization.split(' ')
+    if len(token) == 1:
+        raise HTTPException(status_code=404, detail="Invalid Authorization")
+    else:
+        return token[1]
+
+
 def check_user_is_admin(authorization: UUID = Depends(api_key_header), db: Session = Depends(get_db)):
     auth_user = get_user_by_api_key(authorization, db)
     if (auth_user is None) or not (auth_user.role == "ADMIN"):

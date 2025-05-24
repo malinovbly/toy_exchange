@@ -22,7 +22,8 @@ from src.utils import (
     cancel_order,
     get_instrument_by_ticker,
     execute_market_order,
-    execute_limit_order
+    execute_limit_order,
+    get_api_key
 )
 
 summary_tags = {
@@ -47,7 +48,8 @@ async def create_order(
 ):
     if not authorization:
         raise HTTPException(status_code=401, detail="Unauthorized")
-    auth_user = get_user_by_api_key(UUID(authorization), db)
+    api_key = get_api_key(authorization)
+    auth_user = get_user_by_api_key(UUID(api_key), db)
     if auth_user is None:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
@@ -97,7 +99,8 @@ def list_orders(
 ):
     if not authorization:
         raise HTTPException(status_code=401, detail="Unauthorized")
-    auth_user = get_user_by_api_key(UUID(authorization), db)
+    api_key = get_api_key(authorization)
+    auth_user = get_user_by_api_key(UUID(api_key), db)
     if auth_user is None:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
@@ -143,7 +146,8 @@ def get_order(
 ):
     if not authorization:
         raise HTTPException(status_code=401, detail="Unauthorized")
-    auth_user = get_user_by_api_key(UUID(authorization), db)
+    api_key = get_api_key(authorization)
+    auth_user = get_user_by_api_key(UUID(api_key), db)
     if auth_user is None:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
@@ -186,7 +190,8 @@ def delete_order_api(
 ):
     if not authorization:
         raise HTTPException(status_code=401, detail="Unauthorized")
-    auth_user = get_user_by_api_key(UUID(authorization), db)
+    api_key = get_api_key(authorization)
+    auth_user = get_user_by_api_key(UUID(api_key), db)
     if auth_user is None:
         raise HTTPException(status_code=401, detail="Unauthorized 2")
 
