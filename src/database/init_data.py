@@ -13,7 +13,7 @@ rub_ticker = {
 
 
 def create_admin(db: Session):
-    if db.query(UserModel).filter_by(user="admin").first() is None:
+    if db.query(UserModel).filter_by(name="admin").first() is None:
         admin = UserModel(
             id=uuid4(),
             name="admin",
