@@ -88,7 +88,6 @@ async def create_order(
     except HTTPException as he:
         raise he
     except Exception as e:
-        print(f"Order creation error: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -190,27 +189,32 @@ def delete_order_api(
 ):
     if not authorization:
         raise HTTPException(status_code=401, detail="Unauthorized")
-    api_key = get_api_key(authorization)
-    auth_user = get_user_by_api_key(UUID(api_key), db)
-    if auth_user is None:
-        raise HTTPException(status_code=401, detail="Unauthorized 2")
 
-    cancelled_order = cancel_order(UUID(order_id), db)
+    try:
+        api_key = get_api_key(authorization)
+        auth_user = get_user_by_api_key(UUID(api_key), db)
+        if auth_user is None:
+            raise HTTPException(status_code=401, detail="Unauthorized 2")
 
-    order_dict = {
-        "id": cancelled_order.id,
-        "status": cancelled_order.status,
-        "user_id": cancelled_order.user_id,
-        "timestamp": cancelled_order.timestamp,
-        "filled": cancelled_order.filled,
-        "body": {
-            "direction": cancelled_order.direction,
-            "ticker": cancelled_order.ticker,
-            "qty": cancelled_order.qty
+        cancelled_order = cancel_order(UUID(order_id), db)
+
+        order_dict = {
+            "id": cancelled_order.id,
+            "status": cancelled_order.status,
+            "user_id": cancelled_order.user_id,
+            "timestamp": cancelled_order.timestamp,
+            "filled": cancelled_order.filled,
+            "body": {
+                "direction": cancelled_order.direction,
+                "ticker": cancelled_order.ticker,
+                "qty": cancelled_order.qty
+            }
         }
-    }
 
-    if cancelled_order.price is not None:
-        order_dict["body"]["price"] = cancelled_order.price
-        return LimitOrder(**order_dict)
-    return MarketOrder(**order_dict)
+        if cancelled_order.price is not None:
+            order_dict["body"]["price"] = cancelled_order.price
+            return LimitOrder(**order_dict)
+        return MarketOrder(**order_dict)
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
