@@ -104,4 +104,3 @@ async def get_transaction_history(
         )
         for tx in transactions
     ]
-

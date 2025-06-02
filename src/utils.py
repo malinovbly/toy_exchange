@@ -578,4 +578,3 @@ async def execute_limit_order(limit_order: OrderModel, db: AsyncSession = Depend
     await db.refresh(limit_order)
 
     return limit_order
-

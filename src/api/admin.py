@@ -104,9 +104,8 @@ async def delete_instrument(
         await delete_instrument_by_ticker(ticker, db)
         return Ok
 
-    except Exception as e:
-        # raise HTTPException(status_code=404, detail="Invalid Authorization")
-        raise HTTPException(status_code=404, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=404, detail="Invalid Authorization")
 
 
 @router.post(
