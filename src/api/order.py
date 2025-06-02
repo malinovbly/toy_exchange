@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Union
 from uuid import UUID
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.database import get_db
 from src.security import api_key_header
@@ -13,7 +13,6 @@ from src.schemas.schemas import (
     MarketOrder,
     CreateOrderResponse,
 )
-from src.models.balance import BalanceModel
 from src.utils import (
     create_order_in_db,
     get_order_by_id,
@@ -23,7 +22,8 @@ from src.utils import (
     get_instrument_by_ticker,
     execute_market_order,
     execute_limit_order,
-    get_api_key
+    get_api_key,
+    check_balance_record
 )
 
 summary_tags = {
@@ -37,27 +37,29 @@ router = APIRouter()
 
 
 @router.post(
-    "/api/v1/order", tags=["order"],
+    path="/api/v1/order",
+    tags=["order"],
     response_model=CreateOrderResponse,
     summary=summary_tags["create_order"]
 )
 async def create_order(
         order_data: Union[LimitOrderBody, MarketOrderBody],
         authorization: str = Depends(api_key_header),
-        db: Session = Depends(get_db)
+        db: AsyncSession = Depends(get_db)
 ):
     if not authorization:
         raise HTTPException(status_code=401, detail="Unauthorized")
-    api_key = get_api_key(authorization)
-    auth_user = get_user_by_api_key(UUID(api_key), db)
-    if auth_user is None:
-        raise HTTPException(status_code=401, detail="Unauthorized")
 
     try:
+        api_key = get_api_key(authorization)
+        auth_user = await get_user_by_api_key(UUID(api_key), db)
+        if auth_user is None:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+
         user_id = auth_user.id
 
         # Проверка существования тикера в базе
-        instrument = get_instrument_by_ticker(order_data.ticker, db)
+        instrument = await get_instrument_by_ticker(order_data.ticker, db)
         if instrument is None:
             raise HTTPException(
                 status_code=404,
@@ -65,9 +67,8 @@ async def create_order(
             )
 
         # Проверка кол-ва тикера
-        balance = db.query(BalanceModel).filter_by(user_id=user_id, instrument_ticker=order_data.ticker).first()
-
-        if (not balance or balance.amount < order_data.qty) and order_data.direction == "SELL":
+        balance = await check_balance_record(user_id, order_data.ticker)
+        if (balance is None or balance.amount < order_data.qty) and order_data.direction == "SELL":
             raise HTTPException(
                 status_code=400,
                 detail=f"Insufficient {order_data.ticker} balance for order"
@@ -75,14 +76,14 @@ async def create_order(
 
         # Рыночная заявка
         if isinstance(order_data, MarketOrderBody):
-            db_order = create_order_in_db(order_data, price=None, user_id=user_id, db=db)
-            executed_order = execute_market_order(db_order, db)
+            db_order = await create_order_in_db(order_data, price=None, user_id=user_id, db=db)
+            executed_order = await execute_market_order(db_order, db)
             return CreateOrderResponse(order_id=executed_order.id)
 
         # Лимитная заявка
         else:
-            db_order = create_order_in_db(order_data, price=order_data.price, user_id=user_id, db=db)
-            executed_order = execute_limit_order(db_order, db)
+            db_order = await create_order_in_db(order_data, price=order_data.price, user_id=user_id, db=db)
+            executed_order = await execute_limit_order(db_order, db)
             return CreateOrderResponse(order_id=executed_order.id)
 
     except HTTPException as he:
@@ -91,26 +92,86 @@ async def create_order(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/api/v1/order", tags=["order"], response_model=List[Union[LimitOrder, MarketOrder]], summary=summary_tags["list_orders"])
-def list_orders(
+@router.get(
+    path="/api/v1/order",
+    tags=["order"],
+    response_model=List[Union[LimitOrder, MarketOrder]],
+    summary=summary_tags["list_orders"]
+)
+async def list_orders(
         authorization: str = Depends(api_key_header),
-        db: Session = Depends(get_db)
+        db: AsyncSession = Depends(get_db)
 ):
     if not authorization:
         raise HTTPException(status_code=401, detail="Unauthorized")
-    api_key = get_api_key(authorization)
-    auth_user = get_user_by_api_key(UUID(api_key), db)
-    if auth_user is None:
+
+    try:
+        api_key = get_api_key(authorization)
+        auth_user = await get_user_by_api_key(UUID(api_key), db)
+        if auth_user is None:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+
+        user_id = auth_user.id
+        orders = await get_orders_by_user(user_id, db)
+
+        if not orders:
+            return []
+
+        result = []
+        for order in orders:
+            order_dict = {
+                "id": order.id,
+                "status": order.status,
+                "user_id": order.user_id,
+                "timestamp": order.timestamp,
+                "filled": order.filled,
+                "body": {
+                    "direction": order.direction,
+                    "ticker": order.ticker,
+                    "qty": order.qty
+                }
+            }
+
+            if order.price is not None:
+                order_dict["body"]["price"] = order.price
+                result.append(LimitOrder(**order_dict))
+            else:
+                result.append(MarketOrder(**order_dict))
+
+        return result
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get(
+    path="/api/v1/order/{order_id}",
+    tags=["order"],
+    response_model=Union[LimitOrder, MarketOrder],
+    summary=summary_tags["get_order"]
+)
+async def get_order(
+        order_id: str,
+        authorization: str = Depends(api_key_header),
+        db: AsyncSession = Depends(get_db)
+):
+    if not authorization:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    user_id = auth_user.id
-    orders = get_orders_by_user(user_id, db)
+    try:
+        api_key = get_api_key(authorization)
+        auth_user = await get_user_by_api_key(UUID(api_key), db)
+        if auth_user is None:
+            raise HTTPException(status_code=401, detail="Unauthorized")
 
-    if not orders:
-        return []
+        user_id = auth_user.id
+        order = await get_order_by_id(UUID(order_id), db)
 
-    result = []
-    for order in orders:
+        if order is None:
+            raise HTTPException(status_code=404, detail="Order not found")
+        if order.user_id != user_id:
+            raise HTTPException(status_code=403, detail="Not authorized to access this order")
+
         order_dict = {
             "id": order.id,
             "status": order.status,
@@ -126,77 +187,34 @@ def list_orders(
 
         if order.price is not None:
             order_dict["body"]["price"] = order.price
-            result.append(LimitOrder(**order_dict))
-        else:
-            result.append(MarketOrder(**order_dict))
+            return LimitOrder(**order_dict)
+        return MarketOrder(**order_dict)
 
-    return result
-
-
-@router.get(
-    "/api/v1/order/{order_id}", tags=["order"],
-    response_model=Union[LimitOrder, MarketOrder],
-    summary=summary_tags["get_order"]
-)
-def get_order(
-        order_id: str,
-        authorization: str = Depends(api_key_header),
-        db: Session = Depends(get_db)
-):
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    api_key = get_api_key(authorization)
-    auth_user = get_user_by_api_key(UUID(api_key), db)
-    if auth_user is None:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
-    user_id = auth_user.id
-    order = get_order_by_id(UUID(order_id), db)
-
-    if order is None:
-        raise HTTPException(status_code=404, detail="Order not found")
-    if order.user_id != user_id:
-        raise HTTPException(status_code=403, detail="Not authorized to access this order")
-
-    order_dict = {
-        "id": order.id,
-        "status": order.status,
-        "user_id": order.user_id,
-        "timestamp": order.timestamp,
-        "filled": order.filled,
-        "body": {
-            "direction": order.direction,
-            "ticker": order.ticker,
-            "qty": order.qty
-        }
-    }
-
-    if order.price is not None:
-        order_dict["body"]["price"] = order.price
-        return LimitOrder(**order_dict)
-    return MarketOrder(**order_dict)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.delete(
-    "/api/v1/order/{order_id}", tags=["order"],
+    path="/api/v1/order/{order_id}",
+    tags=["order"],
     response_model=Union[LimitOrder, MarketOrder],
     summary=summary_tags["cancel_order"]
 )
-def delete_order_api(
+async def delete_order_api(
         order_id: str,
         authorization: str = Depends(api_key_header),
-        db: Session = Depends(get_db)
+        db: AsyncSession = Depends(get_db)
 ):
     if not authorization:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     try:
         api_key = get_api_key(authorization)
-        auth_user = get_user_by_api_key(UUID(api_key), db)
+        auth_user = await get_user_by_api_key(UUID(api_key), db)
         if auth_user is None:
             raise HTTPException(status_code=401, detail="Unauthorized 2")
 
-        cancelled_order = cancel_order(UUID(order_id), db)
+        cancelled_order = await cancel_order(UUID(order_id), db)
 
         order_dict = {
             "id": cancelled_order.id,

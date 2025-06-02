@@ -15,12 +15,12 @@ services:
 
   web:
     build: .
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    command: [ "/wait-for-it.sh", "db:5432", "--", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload" ]
     volumes:
       - .:/app
     working_dir: /app/src
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@db:5432/toy_db
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/toy_db
     ports:
       - "8000:8000"
     depends_on:

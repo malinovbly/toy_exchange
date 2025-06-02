@@ -1,11 +1,11 @@
 # src/utils.py
 from uuid import uuid4, UUID
 from fastapi import Depends, HTTPException
-from sqlalchemy import update
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import update, delete, and_
+from sqlalchemy.future import select
 from datetime import datetime
-from typing import Optional, Union
-from typing import List
+from typing import Optional, Union, List
 
 from src.models.balance import BalanceModel
 from src.models.instrument import InstrumentModel
@@ -27,7 +27,7 @@ from src.schemas.schemas import (NewUser,
 
 
 # users
-def register_new_user(user: NewUser, db: Session = Depends(get_db)):
+async def register_new_user(user: NewUser, db: AsyncSession = Depends(get_db)):
     user_id = uuid4()
     token = uuid4()
 
@@ -38,7 +38,9 @@ def register_new_user(user: NewUser, db: Session = Depends(get_db)):
         api_key=token
     )
     db.add(db_user)
-    db.commit()
+
+    await db.commit()
+    await db.refresh(db_user)
 
     return db_user
 
@@ -51,54 +53,63 @@ def get_api_key(authorization: str):
         return token[1]
 
 
-def check_user_is_admin(authorization: UUID = Depends(api_key_header), db: Session = Depends(get_db)):
-    auth_user = get_user_by_api_key(authorization, db)
+async def check_username(username: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(UserModel).filter_by(name=username))
+    return result.scalar_one_or_none()
+
+
+async def get_user_by_id(user_id: UUID, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(UserModel).filter_by(id=user_id))
+    return result.scalar_one_or_none()
+
+
+async def get_user_by_api_key(api_key: UUID, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(UserModel).filter_by(api_key=api_key))
+    return result.scalar_one_or_none()
+
+
+async def check_user_is_admin(authorization: UUID = Depends(api_key_header), db: AsyncSession = Depends(get_db)):
+    auth_user = await get_user_by_api_key(authorization, db)
     if (auth_user is None) or not (auth_user.role == "ADMIN"):
         raise HTTPException(status_code=403, detail="Forbidden")
     return True
 
 
-def check_username(username: str, db: Session = Depends(get_db)):
-    return db.query(UserModel).filter_by(name=username).first()
-
-
-def get_user_by_id(user_id: UUID, db: Session = Depends(get_db)):
-    return db.query(UserModel).filter_by(id=user_id).first()
-
-
-def get_user_by_api_key(api_key: UUID, db: Session = Depends(get_db)):
-    return db.query(UserModel).filter_by(api_key=api_key).first()
-
-
-def delete_user_by_id(user_id: UUID, db: Session = Depends(get_db)):
-    db_user = get_user_by_id(user_id, db)
+async def delete_user_by_id(user_id: UUID, db: AsyncSession = Depends(get_db)):
+    db_user = await get_user_by_id(user_id, db)
 
     if db_user is None:
         raise HTTPException(status_code=404, detail="Not Found")
 
-    db.delete(db_user)
-    db.commit()
+    await db.delete(db_user)
+    await db.commit()
+
     return db_user
 
 
 # instruments
-def check_instrument(instrument: Instrument, db: Session = Depends(get_db)):
-    db_instrument = db.query(InstrumentModel).filter_by(name=instrument.name).first()
+async def check_instrument(instrument: Instrument, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(InstrumentModel).filter_by(name=instrument.name))
+    db_instrument = result.scalar_one_or_none()
     if db_instrument is None:
-        return db.query(InstrumentModel).filter_by(ticker=instrument.ticker).first()
+        result = await db.execute(select(InstrumentModel).filter_by(ticker=instrument.ticker))
+        db_instrument = result.scalar_one_or_none()
     return db_instrument
 
 
-def get_all_instruments(db: Session = Depends(get_db)):
-    return db.query(InstrumentModel).all()
+async def get_all_instruments(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(InstrumentModel))
+    return list(result.scalars().all())
 
 
-def get_instrument_by_ticker(ticker: str, db: Session = Depends(get_db)):
-    return db.query(InstrumentModel).filter_by(ticker=ticker).first()
+async def get_instrument_by_ticker(ticker: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(InstrumentModel).filter_by(ticker=ticker))
+    return result.scalar_one_or_none()
 
 
-def create_instrument(instrument: Instrument, db: Session = Depends(get_db)):
-    if check_instrument(instrument, db) is not None:
+async def create_instrument(instrument: Instrument, db: AsyncSession = Depends(get_db)):
+    existing = await check_instrument(instrument, db)
+    if existing is not None:
         raise HTTPException(status_code=409, detail="Instrument already exists")
 
     db_instrument = InstrumentModel(
@@ -106,52 +117,67 @@ def create_instrument(instrument: Instrument, db: Session = Depends(get_db)):
         ticker=instrument.ticker
     )
     db.add(db_instrument)
-    db.commit()
+    await db.commit()
+    await db.refresh(db_instrument)
 
 
-def delete_instrument_by_ticker(ticker: str, db: Session = Depends(get_db)):
+async def delete_instrument_by_ticker(ticker: str, db: AsyncSession = Depends(get_db)):
     if ticker == "RUB":
         raise HTTPException(status_code=403, detail="Forbidden to remove the RUB ticker")
 
-    db_instrument = db.query(InstrumentModel).filter_by(ticker=ticker).first()
-
+    db_instrument = await get_instrument_by_ticker(ticker, db)
     if db_instrument is None:
         raise HTTPException(status_code=404, detail=f"Ticker {ticker} Not Found")
 
-    db.query(BalanceModel).filter_by(instrument_ticker=ticker).delete()
-    db.delete(db_instrument)
-    db.commit()
+    await db.execute(delete(BalanceModel).where(instrument_ticker=ticker))
+
+    await db.delete(db_instrument)
+    await db.commit()
 
 
 # balances
-def get_balances_by_user_id(user_id: UUID, db: Session = Depends(get_db)):
-    db_balances = db.query(BalanceModel).filter_by(user_id=user_id).all()
+async def get_balances_by_user_id(user_id: UUID, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(BalanceModel).filter_by(user_id=user_id))
+    db_balances = list(result.scalars().all())
     balances = {b.instrument_ticker: b.amount for b in db_balances}
     return balances
 
 
-def check_balance_record(user_id: UUID, ticker: str, db: Session = Depends(get_db)):
-    return db.query(BalanceModel).filter_by(user_id=user_id).filter_by(instrument_ticker=ticker).first()
+async def check_balance_record(user_id: UUID, ticker: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(BalanceModel)
+        .where(
+            and_(
+                BalanceModel.user_id == user_id,
+                BalanceModel.instrument_ticker == ticker
+            )
+        )
+    )
+    return result.scalar_one_or_none()
 
 
-def user_balance_deposit(request: Body_deposit_api_v1_admin_balance_deposit_post, db: Session = Depends(get_db)):
-    if get_user_by_id(request.user_id, db) is None:
+async def user_balance_deposit(request: Body_deposit_api_v1_admin_balance_deposit_post, db: AsyncSession = Depends(get_db)):
+    if await get_user_by_id(request.user_id, db) is None:
         raise HTTPException(status_code=404, detail="User Not Found")
-    if get_instrument_by_ticker(request.ticker, db) is None:
+    if await get_instrument_by_ticker(request.ticker, db) is None:
         raise HTTPException(status_code=404, detail="Ticker Not Found")
 
-    record = check_balance_record(user_id=request.user_id, ticker=request.ticker, db=db)
-
+    record = await check_balance_record(user_id=request.user_id, ticker=request.ticker, db=db)
     if record is not None:
         new_amount = record.amount + request.amount
         updated_record = (
             update(BalanceModel)
-            .where(BalanceModel.user_id == record.user_id)
-            .where(BalanceModel.instrument_ticker == record.instrument_ticker)
+            .where(
+                and_(
+                    BalanceModel.user_id == record.user_id,
+                    BalanceModel.instrument_ticker == record.instrument_ticker
+                )
+            )
             .values(amount=new_amount)
         )
-        db.execute(updated_record)
-        db.commit()
+        await db.execute(updated_record)
+        await db.commit()
+        await db.refresh(record)
     else:
         new_record = BalanceModel(
             user_id=request.user_id,
@@ -159,17 +185,17 @@ def user_balance_deposit(request: Body_deposit_api_v1_admin_balance_deposit_post
             amount=request.amount
         )
         db.add(new_record)
-        db.commit()
+        await db.commit()
+        await db.refresh(new_record)
 
 
-def user_balance_withdraw(request: Body_withdraw_api_v1_admin_balance_withdraw_post, db: Session = Depends(get_db)):
-    if get_user_by_id(request.user_id, db) is None:
+async def user_balance_withdraw(request: Body_withdraw_api_v1_admin_balance_withdraw_post, db: AsyncSession = Depends(get_db)):
+    if await get_user_by_id(request.user_id, db) is None:
         raise HTTPException(status_code=404, detail="User Not Found")
-    if get_instrument_by_ticker(request.ticker, db) is None:
+    if await get_instrument_by_ticker(request.ticker, db) is None:
         raise HTTPException(status_code=404, detail="Ticker Not Found")
 
-    record = check_balance_record(user_id=request.user_id, ticker=request.ticker, db=db)
-
+    record = await check_balance_record(user_id=request.user_id, ticker=request.ticker, db=db)
     if record is None:
         raise HTTPException(status_code=400, detail="Bad Request")
     else:
@@ -177,29 +203,82 @@ def user_balance_withdraw(request: Body_withdraw_api_v1_admin_balance_withdraw_p
         if new_amount >= 0:
             updated_record = (
                 update(BalanceModel)
-                .where(BalanceModel.user_id == record.user_id)
-                .where(BalanceModel.instrument_ticker == record.instrument_ticker)
+                .where(
+                    and_(
+                        BalanceModel.user_id == record.user_id,
+                        BalanceModel.instrument_ticker == record.instrument_ticker
+                    )
+                )
                 .values(amount=new_amount)
             )
-            db.execute(updated_record)
-            db.commit()
+            await db.execute(updated_record)
+            await db.commit()
         else:
             raise HTTPException(status_code=403, detail="Insufficient Funds")
 
 
 # orderbook
-def aggregate_orders(orders: List[OrderModel]) -> List[Level]:
+async def get_bids(ticker: str, limit: int, db: AsyncSession = Depends(get_db)):
+    db_asks = await db.execute(
+        select(OrderModel)
+        .where(
+            and_(
+                OrderModel.ticker == ticker,
+                OrderModel.direction == Direction.SELL,
+                OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED]),
+                OrderModel.price is not None
+            )
+        )
+        .order_by(OrderModel.price.asc())
+        .limit(limit)
+    )
+    return list(db_asks.scalars().all())
+
+
+async def get_asks(ticker: str, limit: int, db: AsyncSession = Depends(get_db)):
+    db_asks = await db.execute(
+        select(OrderModel)
+        .where(
+            and_(
+                OrderModel.ticker == ticker,
+                OrderModel.direction == Direction.SELL,
+                OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED]),
+                OrderModel.price is not None
+            )
+        )
+        .order_by(OrderModel.price.asc())
+        .limit(limit)
+    )
+    return list(db_asks.scalars().all())
+
+
+def aggregate_orders(orders: List[OrderModel], is_bid: bool) -> List[Level]:
     levels = {}
     for order in orders:
         remaining_qty = order.qty - order.filled
-        if order.price in levels:
-            levels[order.price] += remaining_qty
-        else:
-            levels[order.price] = remaining_qty
-    return [Level(price=price, qty=qty) for price, qty in levels.items()]
+        if remaining_qty <= 0:
+            continue
+        levels[order.price] = levels.get(order.price, 0) + remaining_qty
+
+    return sorted(
+        [Level(price=price, qty=qty) for price, qty in levels.items()],
+        key=lambda lvl: lvl.price,
+        reverse=is_bid
+    )
+
 
 # transactions
-def record_transaction(db: Session, ticker: str, price: int, qty: int):
+async def get_transactions_by_ticker(ticker: str, limit: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(TransactionModel)
+        .where(ticker=ticker)
+        .order_by(TransactionModel.timestamp.desc())
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
+async def record_transaction(ticker: str, price: int, qty: int, db: AsyncSession = Depends(get_db)):
     transaction = TransactionModel(
         ticker=ticker,
         price=price,
@@ -207,10 +286,12 @@ def record_transaction(db: Session, ticker: str, price: int, qty: int):
         timestamp=datetime.utcnow()
     )
     db.add(transaction)
+    await db.commit()
+
 
 # orders
-def create_order_in_db(order_data: Union[LimitOrderBody, MarketOrderBody], price: int, user_id: UUID,
-                       db: Session = Depends(get_db)):
+async def create_order_in_db(order_data: Union[LimitOrderBody, MarketOrderBody], price: int, user_id: UUID,
+                             db: AsyncSession = Depends(get_db)):
     db_order = OrderModel(
         id=uuid4(),
         user_id=user_id,
@@ -224,39 +305,42 @@ def create_order_in_db(order_data: Union[LimitOrderBody, MarketOrderBody], price
     )
 
     db.add(db_order)
-    db.commit()
-    db.refresh(db_order)
+    await db.commit()
+    await db.refresh(db_order)
     return db_order
 
 
-def get_order_by_id(order_id: UUID, db: Session = Depends(get_db)):
-    return db.query(OrderModel).filter_by(id=order_id).first()
+async def get_order_by_id(order_id: UUID, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(OrderModel).filter_by(id=order_id))
+    return result.scalar_one_or_none()
 
 
-def delete_order_by_id(order_id: UUID, db: Session = Depends(get_db)):
-    db_order = get_order_by_id(order_id, db)
+async def delete_order_by_id(order_id: UUID, db: AsyncSession = Depends(get_db)):
+    db_order = await get_order_by_id(order_id, db)
     if db_order is None:
         raise HTTPException(status_code=404, detail="Order Not Found")
-    db.delete(db_order)
-    db.commit()
+    await db.delete(db_order)
+    await db.commit()
     return db_order
 
 
-def get_orders_by_user(user_id: UUID, db: Session = Depends(get_db)):
-    return db.query(OrderModel).filter_by(user_id=user_id).all()
+async def get_orders_by_user(user_id: UUID, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(OrderModel).filter_by(user_id=user_id))
+    return list(result.scalars().all())
 
 
-def list_all_orders(db: Session = Depends(get_db)):
-    return db.query(OrderModel).all()
+async def list_all_orders(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(OrderModel))
+    return list(result.scalars().all())
 
 
-def update_order_status(
+async def update_order_status(
         order_id: UUID,
         new_status: OrderStatus,
         filled_qty: Optional[int] = None,
-        db: Session = Depends(get_db)
+        db: AsyncSession = Depends(get_db)
 ):
-    db_order = get_order_by_id(order_id, db)
+    db_order = await get_order_by_id(order_id, db)
     if db_order is None:
         raise HTTPException(status_code=404, detail="Order Not Found")
 
@@ -264,24 +348,31 @@ def update_order_status(
     if filled_qty is not None:
         db_order.filled = filled_qty
 
-    db.commit()
-    db.refresh(db_order)
+    await db.commit()
+    await db.refresh(db_order)
     return db_order
 
 
-def get_orders_by_ticker(ticker: str, db: Session = Depends(get_db)):
-    return db.query(OrderModel).filter_by(ticker=ticker).all()
+async def get_orders_by_ticker(ticker: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(OrderModel).filter_by(ticker=ticker))
+    return list(result.scalars().all())
 
 
-def get_active_orders_by_ticker(ticker: str, db: Session = Depends(get_db)):
-    return db.query(OrderModel).filter(
-        OrderModel.ticker == ticker,
-        OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED])
-    ).all()
+async def get_active_orders_by_ticker(ticker: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(OrderModel)
+        .where(
+            and_(
+                OrderModel.ticker == ticker,
+                OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED])
+            )
+        )
+    )
+    return list(result.scalars().all())
 
 
-def cancel_order(order_id: UUID, db: Session = Depends(get_db)):
-    db_order = get_order_by_id(order_id, db)
+async def cancel_order(order_id: UUID, db: AsyncSession = Depends(get_db)):
+    db_order = await get_order_by_id(order_id, db)
     if db_order is None:
         raise HTTPException(status_code=404, detail="Order Not Found")
 
@@ -292,23 +383,20 @@ def cancel_order(order_id: UUID, db: Session = Depends(get_db)):
         )
 
     db_order.status = OrderStatus.CANCELLED
-    db.commit()
-    db.refresh(db_order)
+
+    await db.commit()
+    await db.refresh(db_order)
     return db_order
 
 
-def update_user_balance(
+async def update_user_balance(
         user_id: UUID,
         ticker: str,
         amount_change: int,
-        direction: Direction = None,  
-        db: Session = Depends(get_db)
+        direction: Direction = None,
+        db: AsyncSession = Depends(get_db)
 ) -> BalanceModel:
-    db_balance = db.query(BalanceModel).filter_by(
-        user_id=user_id,
-        instrument_ticker=ticker
-    ).first()
-
+    db_balance = await check_balance_record(user_id, ticker, db)
     if db_balance is None:
         db_balance = BalanceModel(
             user_id=user_id,
@@ -318,6 +406,7 @@ def update_user_balance(
         db.add(db_balance)
 
     new_amount = db_balance.amount + amount_change
+
     # Выдается и при слуаче нехватки баланса юзера, и при случае нехватки баланса другого трейдера
     if new_amount < 0:
         raise HTTPException(
@@ -326,39 +415,39 @@ def update_user_balance(
         )
 
     db_balance.amount = new_amount
-    db.commit()
-    db.refresh(db_balance)
+
+    await db.commit()
+    await db.refresh(db_balance)
     return db_balance
 
 
-def process_trade(
-    db: Session,
+async def process_trade(
     is_buy: bool,
-    user_id: int,
-    counterparty_id: int,
+    user_id: UUID,
+    counterparty_id: UUID,
     ticker: str,
     trade_qty: int,
     trade_price: int,
+    db: AsyncSession = Depends(get_db)
 ):
     trade_amount = trade_qty * trade_price
     ticker_rub = "RUB"
 
     if is_buy:
-        update_user_balance(user_id, ticker_rub, -trade_amount, db=db)
-        update_user_balance(user_id, ticker, trade_qty, db=db)
-        update_user_balance(counterparty_id, ticker, -trade_qty, db=db)
-        update_user_balance(counterparty_id, ticker_rub, trade_amount, db=db)
+        await update_user_balance(user_id, ticker_rub, -trade_amount, db=db)
+        await update_user_balance(user_id, ticker, trade_qty, db=db)
+        await update_user_balance(counterparty_id, ticker, -trade_qty, db=db)
+        await update_user_balance(counterparty_id, ticker_rub, trade_amount, db=db)
     else:
-        update_user_balance(user_id, ticker, -trade_qty, db=db)
-        update_user_balance(user_id, ticker_rub, trade_amount, db=db)
-        update_user_balance(counterparty_id, ticker_rub, -trade_amount, db=db)
-        update_user_balance(counterparty_id, ticker, trade_qty, db=db)
+        await update_user_balance(user_id, ticker, -trade_qty, db=db)
+        await update_user_balance(user_id, ticker_rub, trade_amount, db=db)
+        await update_user_balance(counterparty_id, ticker_rub, -trade_amount, db=db)
+        await update_user_balance(counterparty_id, ticker, trade_qty, db=db)
 
-    # Записываем транзакцию
-    record_transaction(db, ticker, trade_price, trade_qty)
+    await record_transaction(ticker, trade_price, trade_qty, db)
 
 
-def update_order_status_and_filled(db: Session, order: OrderModel, filled_increment: int):
+async def update_order_status_and_filled(order: OrderModel, filled_increment: int, db: AsyncSession = Depends(get_db)):
     order.filled += filled_increment
     if order.filled == order.qty:
         order.status = OrderStatus.EXECUTED
@@ -368,9 +457,10 @@ def update_order_status_and_filled(db: Session, order: OrderModel, filled_increm
         order.status = OrderStatus.NEW
 
     db.add(order)
+    await db.commit()
 
 
-def execute_market_order(market_order: OrderModel, db: Session):
+async def execute_market_order(market_order: OrderModel, db: AsyncSession = Depends(get_db)):
     remaining_qty = market_order.qty
     ticker = market_order.ticker
     direction = market_order.direction
@@ -378,17 +468,20 @@ def execute_market_order(market_order: OrderModel, db: Session):
 
     is_buy = direction == Direction.BUY
     opposite_direction = Direction.SELL if is_buy else Direction.BUY
-    limit_orders = (
-        db.query(OrderModel)
-          .filter(
-              OrderModel.ticker == ticker,
-              OrderModel.direction == opposite_direction,
-              OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED]),
-              OrderModel.price != None        
-          )
-          .order_by(OrderModel.price.asc() if is_buy else OrderModel.price.desc())
-          .all()
+
+    result = await db.execute(
+        select(OrderModel)
+        .where(
+            and_(
+                OrderModel.ticker == ticker,
+                OrderModel.direction == opposite_direction,
+                OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED]),
+                OrderModel.price is not None
+            )
+        )
+        .order_by(OrderModel.price.asc() if is_buy else OrderModel.price.desc())
     )
+    limit_orders = list(result.scalars().all())
 
     total_filled = 0
 
@@ -401,8 +494,8 @@ def execute_market_order(market_order: OrderModel, db: Session):
         trade_price = limit_order.price
         seller_id = limit_order.user_id
 
-        process_trade(db, is_buy, user_id, seller_id, ticker, trade_qty, trade_price)
-        update_order_status_and_filled(db, limit_order, trade_qty)
+        await process_trade(is_buy, user_id, seller_id, ticker, trade_qty, trade_price, db)
+        await update_order_status_and_filled(limit_order, trade_qty, db)
 
         remaining_qty -= trade_qty
         total_filled += trade_qty
@@ -420,15 +513,14 @@ def execute_market_order(market_order: OrderModel, db: Session):
         if total_filled == market_order.qty
         else OrderStatus.PARTIALLY_EXECUTED
     )
-    db.add(market_order)
 
-    db.commit()
-    db.refresh(market_order)
+    db.add(market_order)
+    await db.commit()
+    await db.refresh(market_order)
     return market_order
 
 
-
-def execute_limit_order(limit_order: OrderModel, db: Session):
+async def execute_limit_order(limit_order: OrderModel, db: AsyncSession = Depends(get_db)):
     remaining_qty = limit_order.qty
     ticker = limit_order.ticker
     direction = limit_order.direction
@@ -437,18 +529,20 @@ def execute_limit_order(limit_order: OrderModel, db: Session):
     is_buy = direction == Direction.BUY
     opposite_direction = Direction.SELL if is_buy else Direction.BUY
 
-    matching_orders = (
-        db.query(OrderModel)
-        .filter(
-            OrderModel.ticker == ticker,
-            OrderModel.direction == opposite_direction,
-            OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED]),
-            OrderModel.price != None,
-            OrderModel.price <= limit_order.price if is_buy else OrderModel.price >= limit_order.price
+    result = await db.execute(
+        select(OrderModel)
+        .where(
+            and_(
+                OrderModel.ticker == ticker,
+                OrderModel.direction == opposite_direction,
+                OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED]),
+                OrderModel.price is not None,
+                OrderModel.price <= limit_order.price if is_buy else OrderModel.price >= limit_order.price
+            )
         )
         .order_by(OrderModel.price.asc() if is_buy else OrderModel.price.desc())
-        .all()
     )
+    matching_orders = list(result.scalars().all())
 
     total_filled = 0
 
@@ -461,8 +555,8 @@ def execute_limit_order(limit_order: OrderModel, db: Session):
         trade_price = match.price
         counterparty_id = match.user_id
 
-        process_trade(db, is_buy, user_id, counterparty_id, ticker, trade_qty, trade_price)
-        update_order_status_and_filled(db, match, trade_qty)
+        await process_trade(is_buy, user_id, counterparty_id, ticker, trade_qty, trade_price, db)
+        await update_order_status_and_filled(match, trade_qty, db)
 
         remaining_qty -= trade_qty
         total_filled += trade_qty
@@ -480,8 +574,8 @@ def execute_limit_order(limit_order: OrderModel, db: Session):
         limit_order.status = OrderStatus.EXECUTED
 
     db.add(limit_order)
-    db.commit()
-    db.refresh(limit_order)
+    await db.commit()
+    await db.refresh(limit_order)
 
     return limit_order
 
