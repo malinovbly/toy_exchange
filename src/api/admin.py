@@ -98,12 +98,15 @@ async def delete_instrument(
 
     try:
         api_key = get_api_key(authorization)
-        if await check_user_is_admin(UUID(api_key), db):
-            await delete_instrument_by_ticker(ticker, db)
+        is_admin = await check_user_is_admin(UUID(api_key), db)
+        if not is_admin:
+            raise HTTPException(status_code=403, detail="Forbidden")
+        await delete_instrument_by_ticker(ticker, db)
         return Ok
 
-    except Exception:
-        raise HTTPException(status_code=404, detail="Invalid Authorization")
+    except Exception as e:
+        # raise HTTPException(status_code=404, detail="Invalid Authorization")
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.post(
