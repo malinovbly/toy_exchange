@@ -1,16 +1,17 @@
 # src/api/public.py
 from fastapi import APIRouter, HTTPException, Depends, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 
-from src.models.order import OrderModel, OrderStatus, Direction
-from src.models.instrument import InstrumentModel
-from src.models.transaction import TransactionModel
 from src.schemas.schemas import NewUser, User, Instrument, L2OrderBook, Transaction
 from src.utils import (check_username,
                        get_all_instruments,
+                       get_instrument_by_ticker,
                        register_new_user,
-                       aggregate_orders)
+                       aggregate_orders,
+                       get_bids,
+                       get_asks,
+                       get_transactions_by_ticker)
 from src.database.database import get_db
 
 
@@ -24,74 +25,71 @@ summary_tags = {
 router = APIRouter()
 
 
-@router.post("/api/v1/public/register", tags=["public"], response_model=User, summary=summary_tags["register"])
-def register(user: NewUser, db: Session = Depends(get_db)):
-    if check_username(user.name, db) is not None:
+@router.post(
+    path="/api/v1/public/register",
+    tags=["public"],
+    response_model=User,
+    summary=summary_tags["register"]
+)
+async def register(
+        user: NewUser,
+        db: AsyncSession = Depends(get_db)
+):
+    if await check_username(user.name, db) is not None:
         raise HTTPException(status_code=409, detail="Username already exists")
-    return register_new_user(user, db)
-
-
-@router.get(path="/api/v1/public/instrument", tags=["public"], response_model=List[Instrument], summary=summary_tags["list_instruments"])
-def list_instruments(db: Session = Depends(get_db)):
-    return get_all_instruments(db)
+    return await register_new_user(user, db)
 
 
 @router.get(
-    "/api/v1/public/orderbook/{ticker}",
+    path="/api/v1/public/instrument",
+    tags=["public"],
+    response_model=List[Instrument],
+    summary=summary_tags["list_instruments"]
+)
+async def list_instruments(db: AsyncSession = Depends(get_db)):
+    return await get_all_instruments(db)
+
+
+@router.get(
+    path="/api/v1/public/orderbook/{ticker}",
     tags=["public"],
     response_model=L2OrderBook,
-    summary="Get Orderbook"
+    summary=summary_tags["get_orderbook"]
 )
-def get_orderbook(
-    ticker: str,
-    limit: int = Query(10, ge=1, le=25),
-    db: Session = Depends(get_db)
+async def get_orderbook(
+        ticker: str,
+        limit: int = Query(10, ge=1, le=25),
+        db: AsyncSession = Depends(get_db)
 ):
-    bids = db.query(OrderModel).filter(
-        OrderModel.ticker == ticker,
-        OrderModel.direction == Direction.BUY,
-        OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED]),
-        OrderModel.price != None
-    ).order_by(OrderModel.price.desc()).limit(limit).all()
+    bids = await get_bids(ticker, limit, db)
+    asks = await get_asks(ticker, limit, db)
 
-    asks = db.query(OrderModel).filter(
-        OrderModel.ticker == ticker,
-        OrderModel.direction == Direction.SELL,
-        OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED]),
-        OrderModel.price != None
-    ).order_by(OrderModel.price.asc()).limit(limit).all()
-
-    bid_levels = aggregate_orders(bids)
-    ask_levels = aggregate_orders(asks)
+    bid_levels = aggregate_orders(bids, is_bid=True)
+    ask_levels = aggregate_orders(asks, is_bid=False)
 
     return L2OrderBook(bid_levels=bid_levels, ask_levels=ask_levels)
 
 
 @router.get(
-    path="/api/v1/public/transactions/{ticker}", 
-    tags=["public"], 
+    path="/api/v1/public/transactions/{ticker}",
+    tags=["public"],
     response_model=List[Transaction],
-    summary="Get transaction history"
+    summary=summary_tags["get_transaction_history"]
 )
-def get_transaction_history(
+async def get_transaction_history(
     ticker: str,
     limit: int = Query(10, ge=1, le=100), 
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
-    instrument = db.query(InstrumentModel).filter(
-        InstrumentModel.ticker == ticker
-    ).first()
-    if not instrument:
+    instrument = await get_instrument_by_ticker(ticker, db)
+    if instrument is None:
         raise HTTPException(
             status_code=404,
             detail=f"Ticker {ticker} not found"
         )
 
-    transactions = db.query(TransactionModel).filter(
-        TransactionModel.ticker == ticker
-    ).order_by(TransactionModel.timestamp.desc()).limit(limit).all()
-
-    if not transactions:
+    transactions = await get_transactions_by_ticker(ticker, limit, db)
+    if (transactions is None) or (len(transactions) == 0):
         raise HTTPException(
             status_code=404,
             detail=f"No transactions found for ticker {ticker}"
