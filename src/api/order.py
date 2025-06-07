@@ -67,7 +67,7 @@ async def create_order(
             )
 
         # Проверка кол-ва тикера
-        balance = await check_balance_record(user_id, order_data.ticker)
+        balance = await check_balance_record(user_id, order_data.ticker, db)
         if (balance is None or balance.amount < order_data.qty) and order_data.direction == "SELL":
             raise HTTPException(
                 status_code=400,

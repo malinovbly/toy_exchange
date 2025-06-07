@@ -136,14 +136,14 @@ async def delete_instrument_by_ticker(ticker: str, db: AsyncSession = Depends(ge
 
 
 # balances
-async def get_balances_by_user_id(user_id: UUID, db: AsyncSession = Depends(get_db)):
+async def get_balances_by_user_id(user_id: UUID, db: AsyncSession):
     result = await db.execute(select(BalanceModel).filter_by(user_id=user_id))
     db_balances = list(result.scalars().all())
     balances = {b.instrument_ticker: b.amount for b in db_balances}
     return balances
 
 
-async def check_balance_record(user_id: UUID, ticker: str, db: AsyncSession = Depends(get_db)):
+async def check_balance_record(user_id: UUID, ticker: str, db: AsyncSession):
     result = await db.execute(
         select(BalanceModel)
         .where(
@@ -156,7 +156,7 @@ async def check_balance_record(user_id: UUID, ticker: str, db: AsyncSession = De
     return result.scalar_one_or_none()
 
 
-async def user_balance_deposit(request: Body_deposit_api_v1_admin_balance_deposit_post, db: AsyncSession = Depends(get_db)):
+async def user_balance_deposit(request: Body_deposit_api_v1_admin_balance_deposit_post, db: AsyncSession):
     if await get_user_by_id(request.user_id, db) is None:
         raise HTTPException(status_code=404, detail="User Not Found")
     if await get_instrument_by_ticker(request.ticker, db) is None:
@@ -189,7 +189,7 @@ async def user_balance_deposit(request: Body_deposit_api_v1_admin_balance_deposi
         await db.refresh(new_record)
 
 
-async def user_balance_withdraw(request: Body_withdraw_api_v1_admin_balance_withdraw_post, db: AsyncSession = Depends(get_db)):
+async def user_balance_withdraw(request: Body_withdraw_api_v1_admin_balance_withdraw_post, db: AsyncSession):
     if await get_user_by_id(request.user_id, db) is None:
         raise HTTPException(status_code=404, detail="User Not Found")
     if await get_instrument_by_ticker(request.ticker, db) is None:
@@ -218,13 +218,13 @@ async def user_balance_withdraw(request: Body_withdraw_api_v1_admin_balance_with
 
 
 # orderbook
-async def get_bids(ticker: str, limit: int, db: AsyncSession = Depends(get_db)):
+async def get_bids(ticker: str, limit: int, db: AsyncSession):
     db_asks = await db.execute(
         select(OrderModel)
         .where(
             and_(
                 OrderModel.ticker == ticker,
-                OrderModel.direction == Direction.SELL,
+                OrderModel.direction == Direction.BUY,
                 OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED]),
                 OrderModel.price is not None
             )
@@ -235,7 +235,7 @@ async def get_bids(ticker: str, limit: int, db: AsyncSession = Depends(get_db)):
     return list(db_asks.scalars().all())
 
 
-async def get_asks(ticker: str, limit: int, db: AsyncSession = Depends(get_db)):
+async def get_asks(ticker: str, limit: int, db: AsyncSession):
     db_asks = await db.execute(
         select(OrderModel)
         .where(
@@ -268,7 +268,7 @@ def aggregate_orders(orders: List[OrderModel], is_bid: bool) -> List[Level]:
 
 
 # transactions
-async def get_transactions_by_ticker(ticker: str, limit: int, db: AsyncSession = Depends(get_db)):
+async def get_transactions_by_ticker(ticker: str, limit: int, db: AsyncSession):
     result = await db.execute(
         select(TransactionModel)
         .where(TransactionModel.ticker == ticker)
@@ -278,7 +278,7 @@ async def get_transactions_by_ticker(ticker: str, limit: int, db: AsyncSession =
     return list(result.scalars().all())
 
 
-async def record_transaction(ticker: str, price: int, qty: int, db: AsyncSession = Depends(get_db)):
+async def record_transaction(ticker: str, price: int, qty: int, db: AsyncSession):
     transaction = TransactionModel(
         ticker=ticker,
         price=price,
@@ -291,7 +291,7 @@ async def record_transaction(ticker: str, price: int, qty: int, db: AsyncSession
 
 # orders
 async def create_order_in_db(order_data: Union[LimitOrderBody, MarketOrderBody], price: int, user_id: UUID,
-                             db: AsyncSession = Depends(get_db)):
+                             db: AsyncSession):
     db_order = OrderModel(
         id=uuid4(),
         user_id=user_id,
@@ -310,12 +310,12 @@ async def create_order_in_db(order_data: Union[LimitOrderBody, MarketOrderBody],
     return db_order
 
 
-async def get_order_by_id(order_id: UUID, db: AsyncSession = Depends(get_db)):
+async def get_order_by_id(order_id: UUID, db: AsyncSession):
     result = await db.execute(select(OrderModel).filter_by(id=order_id))
     return result.scalar_one_or_none()
 
 
-async def delete_order_by_id(order_id: UUID, db: AsyncSession = Depends(get_db)):
+async def delete_order_by_id(order_id: UUID, db: AsyncSession):
     db_order = await get_order_by_id(order_id, db)
     if db_order is None:
         raise HTTPException(status_code=404, detail="Order Not Found")
@@ -324,12 +324,12 @@ async def delete_order_by_id(order_id: UUID, db: AsyncSession = Depends(get_db))
     return db_order
 
 
-async def get_orders_by_user(user_id: UUID, db: AsyncSession = Depends(get_db)):
+async def get_orders_by_user(user_id: UUID, db: AsyncSession):
     result = await db.execute(select(OrderModel).filter_by(user_id=user_id))
     return list(result.scalars().all())
 
 
-async def list_all_orders(db: AsyncSession = Depends(get_db)):
+async def list_all_orders(db: AsyncSession):
     result = await db.execute(select(OrderModel))
     return list(result.scalars().all())
 
@@ -337,9 +337,8 @@ async def list_all_orders(db: AsyncSession = Depends(get_db)):
 async def update_order_status(
         order_id: UUID,
         new_status: OrderStatus,
-        filled_qty: Optional[int] = None,
-        db: AsyncSession = Depends(get_db)
-):
+        db: AsyncSession,
+        filled_qty: Optional[int] = None):
     db_order = await get_order_by_id(order_id, db)
     if db_order is None:
         raise HTTPException(status_code=404, detail="Order Not Found")
@@ -353,12 +352,12 @@ async def update_order_status(
     return db_order
 
 
-async def get_orders_by_ticker(ticker: str, db: AsyncSession = Depends(get_db)):
+async def get_orders_by_ticker(ticker: str, db: AsyncSession):
     result = await db.execute(select(OrderModel).filter_by(ticker=ticker))
     return list(result.scalars().all())
 
 
-async def get_active_orders_by_ticker(ticker: str, db: AsyncSession = Depends(get_db)):
+async def get_active_orders_by_ticker(ticker: str, db: AsyncSession):
     result = await db.execute(
         select(OrderModel)
         .where(
@@ -371,7 +370,7 @@ async def get_active_orders_by_ticker(ticker: str, db: AsyncSession = Depends(ge
     return list(result.scalars().all())
 
 
-async def cancel_order(order_id: UUID, db: AsyncSession = Depends(get_db)):
+async def cancel_order(order_id: UUID, db: AsyncSession):
     db_order = await get_order_by_id(order_id, db)
     if db_order is None:
         raise HTTPException(status_code=404, detail="Order Not Found")
@@ -393,9 +392,7 @@ async def update_user_balance(
         user_id: UUID,
         ticker: str,
         amount_change: int,
-        direction: Direction = None,
-        db: AsyncSession = Depends(get_db)
-) -> BalanceModel:
+        db: AsyncSession) -> BalanceModel:
     db_balance = await check_balance_record(user_id, ticker, db)
     if db_balance is None:
         db_balance = BalanceModel(
@@ -543,7 +540,6 @@ async def execute_limit_order(limit_order: OrderModel, db: AsyncSession = Depend
         .order_by(OrderModel.price.asc() if is_buy else OrderModel.price.desc())
     )
     matching_orders = list(result.scalars().all())
-
     total_filled = 0
 
     for match in matching_orders:
@@ -551,9 +547,18 @@ async def execute_limit_order(limit_order: OrderModel, db: AsyncSession = Depend
         if available_qty <= 0:
             continue
 
+        counterparty_id = match.user_id 
+
         trade_qty = min(remaining_qty, available_qty)
         trade_price = match.price
-        counterparty_id = match.user_id
+
+        counterparty_balance = await check_balance_record(counterparty_id, ticker, db)
+
+        if counterparty_balance is None or (
+            (is_buy and counterparty_balance.amount < trade_qty) or
+            (not is_buy and counterparty_balance.amount < trade_qty * trade_price)
+        ):
+            continue
 
         await process_trade(is_buy, user_id, counterparty_id, ticker, trade_qty, trade_price, db)
         await update_order_status_and_filled(match, trade_qty, db)
