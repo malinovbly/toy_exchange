@@ -34,7 +34,7 @@ async def register_new_user(user: NewUser, db: AsyncSession = Depends(get_db)):
     db_user = UserModel(
         id=user_id,
         name=user.name,
-        role="ADMIN",
+        role="USER",
         api_key=token
     )
     db.add(db_user)
@@ -559,7 +559,6 @@ async def execute_limit_order(limit_order: OrderModel, db: AsyncSession = Depend
             (not is_buy and counterparty_balance.amount < trade_qty * trade_price)
         ):
             continue
-
 
         await process_trade(is_buy, user_id, counterparty_id, ticker, trade_qty, trade_price, db)
         await update_order_status_and_filled(match, trade_qty, db)
