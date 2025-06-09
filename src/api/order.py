@@ -12,6 +12,7 @@ from src.schemas.schemas import (
     LimitOrder,
     MarketOrder,
     CreateOrderResponse,
+    Direction
 )
 from src.utils import (
     create_order_in_db,
@@ -66,13 +67,21 @@ async def create_order(
                 detail=f"Ticker '{order_data.ticker}' not found in instruments"
             )
 
-        # Проверка кол-ва тикера
+        # Проверка кол-ва тикера (если продаем)
         balance = await check_balance_record(user_id, order_data.ticker, db)
-        if (balance is None or balance.amount < order_data.qty) and order_data.direction == "SELL":
+        if (balance is None or balance.amount < order_data.qty) and order_data.direction == Direction.SELL:
             raise HTTPException(
                 status_code=400,
                 detail=f"Insufficient {order_data.ticker} balance for order"
             )
+        
+        # Проверка кол-ва рублей (если покупаем)
+        elif order_data.direction == Direction.BUY:
+            rub_balance = await check_balance_record(user_id, "RUB", db)
+            total_cost = order_data.qty * getattr(order_data, "price", 1) 
+
+            if rub_balance is None or rub_balance.amount < total_cost:
+                raise HTTPException(status_code=400, detail=f"Insufficient RUB balance for order")
 
         # Рыночная заявка
         if isinstance(order_data, MarketOrderBody):

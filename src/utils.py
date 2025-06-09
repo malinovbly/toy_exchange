@@ -34,7 +34,7 @@ async def register_new_user(user: NewUser, db: AsyncSession = Depends(get_db)):
     db_user = UserModel(
         id=user_id,
         name=user.name,
-        role="USER",
+        role="ADMIN",
         api_key=token
     )
     db.add(db_user)
@@ -425,7 +425,7 @@ async def process_trade(
     ticker: str,
     trade_qty: int,
     trade_price: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession
 ):
     trade_amount = trade_qty * trade_price
     ticker_rub = "RUB"
@@ -444,7 +444,7 @@ async def process_trade(
     await record_transaction(ticker, trade_price, trade_qty, db)
 
 
-async def update_order_status_and_filled(order: OrderModel, filled_increment: int, db: AsyncSession = Depends(get_db)):
+async def update_order_status_and_filled(order: OrderModel, filled_increment: int, db: AsyncSession):
     order.filled += filled_increment
     if order.filled == order.qty:
         order.status = OrderStatus.EXECUTED
@@ -457,7 +457,7 @@ async def update_order_status_and_filled(order: OrderModel, filled_increment: in
     await db.commit()
 
 
-async def execute_market_order(market_order: OrderModel, db: AsyncSession = Depends(get_db)):
+async def execute_market_order(market_order: OrderModel, db: AsyncSession):
     remaining_qty = market_order.qty
     ticker = market_order.ticker
     direction = market_order.direction
@@ -517,7 +517,7 @@ async def execute_market_order(market_order: OrderModel, db: AsyncSession = Depe
     return market_order
 
 
-async def execute_limit_order(limit_order: OrderModel, db: AsyncSession = Depends(get_db)):
+async def execute_limit_order(limit_order: OrderModel, db: AsyncSession):
     remaining_qty = limit_order.qty
     ticker = limit_order.ticker
     direction = limit_order.direction
