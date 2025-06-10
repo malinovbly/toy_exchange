@@ -12,7 +12,8 @@ from src.schemas.schemas import (
     LimitOrder,
     MarketOrder,
     CreateOrderResponse,
-    Direction
+    Direction,
+    Ok
 )
 from src.utils import (
     create_order_in_db,
@@ -24,7 +25,8 @@ from src.utils import (
     execute_market_order,
     execute_limit_order,
     get_api_key,
-    check_balance_record
+    check_balance_record,
+    create_order_dict
 )
 
 summary_tags = {
@@ -128,24 +130,8 @@ async def list_orders(
 
         result = []
         for order in orders:
-            order_dict = {
-                "id": order.id,
-                "status": order.status,
-                "user_id": order.user_id,
-                "timestamp": order.timestamp,
-                "body": {
-                    "direction": order.direction,
-                    "ticker": order.ticker,
-                    "qty": order.qty
-                },
-                "filled": order.filled
-            }
-
-            if order.price is not None:
-                order_dict["body"]["price"] = order.price
-                result.append(LimitOrder(**order_dict))
-            else:
-                result.append(MarketOrder(**order_dict))
+            order_dict = create_order_dict(order)
+            result.append(order_dict)
 
         return result
 
@@ -181,23 +167,8 @@ async def get_order(
         if order.user_id != user_id:
             raise HTTPException(status_code=403, detail="Not authorized to access this order")
 
-        order_dict = {
-            "id": order.id,
-            "status": order.status,
-            "user_id": order.user_id,
-            "timestamp": order.timestamp,
-            "filled": order.filled,
-            "body": {
-                "direction": order.direction,
-                "ticker": order.ticker,
-                "qty": order.qty
-            }
-        }
-
-        if order.price is not None:
-            order_dict["body"]["price"] = order.price
-            return LimitOrder(**order_dict)
-        return MarketOrder(**order_dict)
+        order_dict = create_order_dict(order)
+        return order_dict
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -221,27 +192,10 @@ async def delete_order_api(
         api_key = get_api_key(authorization)
         auth_user = await get_user_by_api_key(UUID(api_key), db)
         if auth_user is None:
-            raise HTTPException(status_code=401, detail="Unauthorized 2")
+            raise HTTPException(status_code=401, detail="Unauthorized")
 
-        cancelled_order = await cancel_order(UUID(order_id), db)
-
-        order_dict = {
-            "id": cancelled_order.id,
-            "status": cancelled_order.status,
-            "user_id": cancelled_order.user_id,
-            "timestamp": cancelled_order.timestamp,
-            "filled": cancelled_order.filled,
-            "body": {
-                "direction": cancelled_order.direction,
-                "ticker": cancelled_order.ticker,
-                "qty": cancelled_order.qty
-            }
-        }
-
-        if cancelled_order.price is not None:
-            order_dict["body"]["price"] = cancelled_order.price
-            return LimitOrder(**order_dict)
-        return MarketOrder(**order_dict)
+        await cancel_order(UUID(order_id), db)
+        return Ok
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
