@@ -3,21 +3,25 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 
-from src.schemas.schemas import (User,
-                                 Instrument,
-                                 Ok,
-                                 Body_deposit_api_v1_admin_balance_deposit_post,
-                                 Body_withdraw_api_v1_admin_balance_withdraw_post)
-from src.utils import (get_user_by_api_key,
-                       check_user_is_admin,
-                       delete_user_by_id,
-                       create_instrument,
-                       delete_instrument_by_ticker,
-                       user_balance_deposit,
-                       user_balance_withdraw,
-                       get_api_key)
 from src.database.database import get_db
 from src.security import api_key_header
+from src.schemas.schemas import (
+    User,
+    Instrument,
+    Ok,
+    Body_deposit_api_v1_admin_balance_deposit_post,
+    Body_withdraw_api_v1_admin_balance_withdraw_post
+)
+from src.utils import (
+    get_user_by_api_key,
+    check_user_is_admin,
+    delete_user_by_id,
+    create_instrument,
+    delete_instrument_by_ticker,
+    user_balance_deposit,
+    user_balance_withdraw,
+    get_api_key
+)
 
 
 summary_tags = {

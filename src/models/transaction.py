@@ -1,6 +1,7 @@
 # src/models/transaction.py
 from sqlalchemy import Column, Integer, String, DateTime
 from datetime import datetime
+
 from src.database.database import Base
 
 
