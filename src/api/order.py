@@ -133,12 +133,12 @@ async def list_orders(
                 "status": order.status,
                 "user_id": order.user_id,
                 "timestamp": order.timestamp,
-                "filled": order.filled,
                 "body": {
                     "direction": order.direction,
                     "ticker": order.ticker,
                     "qty": order.qty
-                }
+                },
+                "filled": order.filled
             }
 
             if order.price is not None:
