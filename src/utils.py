@@ -132,7 +132,7 @@ async def delete_instrument_by_ticker(ticker: str, db: AsyncSession = Depends(ge
     if db_instrument is None:
         raise HTTPException(status_code=404, detail=f"Ticker {ticker} Not Found")
 
-    await db.execute(delete(BalanceModel).where(BalanceModel.instrument_ticker == ticker))
+    await db.execute(delete(BalanceModel).filter_by(instrument_ticker=ticker))
 
     await db.delete(db_instrument)
     await db.commit()
@@ -274,7 +274,7 @@ def aggregate_orders(orders: List[OrderModel], is_bid: bool) -> List[Level]:
 async def get_transactions_by_ticker(ticker: str, limit: int, db: AsyncSession):
     result = await db.execute(
         select(TransactionModel)
-        .where(TransactionModel.ticker == ticker)
+        .filter_by(ticker=ticker)
         .order_by(TransactionModel.timestamp.desc())
         .limit(limit)
     )
@@ -536,9 +536,6 @@ async def execute_market_order(market_order: OrderModel, db: AsyncSession):
     await db.commit()
     await db.refresh(market_order)
     return market_order
-
-
-
 
 
 async def execute_limit_order(limit_order: OrderModel, db: AsyncSession):
