@@ -295,17 +295,32 @@ async def record_transaction(ticker: str, price: int, qty: int, db: AsyncSession
 # orders
 async def create_order_in_db(order_data: Union[LimitOrderBody, MarketOrderBody], price: int, user_id: UUID,
                              db: AsyncSession):
-    db_order = OrderModel(
-        id=uuid4(),
-        user_id=user_id,
-        timestamp=datetime.utcnow(),
-        direction=order_data.direction,
-        ticker=order_data.ticker,
-        qty=order_data.qty,
-        status=OrderStatus.NEW,
-        price=price,
-        filled=0
-    )
+    if isinstance(order_data, MarketOrderBody):
+        db_order = OrderModel(
+            id=uuid4(),
+            status=OrderStatus.NEW,
+            user_id=user_id,
+            timestamp=datetime.utcnow(),
+            direction=order_data.direction,
+            ticker=order_data.ticker,
+            qty=order_data.qty,
+            price=price,
+            filled=-1,
+            type="MARKET"
+        )
+    else:
+        db_order = OrderModel(
+            id=uuid4(),
+            status=OrderStatus.NEW,
+            user_id=user_id,
+            timestamp=datetime.utcnow(),
+            direction=order_data.direction,
+            ticker=order_data.ticker,
+            qty=order_data.qty,
+            price=price,
+            filled=0,
+            type="LIMIT"
+        )
 
     db.add(db_order)
     await db.commit()
