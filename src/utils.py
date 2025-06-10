@@ -37,7 +37,7 @@ async def register_new_user(user: NewUser, db: AsyncSession = Depends(get_db)):
     db_user = UserModel(
         id=user_id,
         name=user.name,
-        role="USER",
+        role="ADMIN",
         api_key=token
     )
     db.add(db_user)
@@ -132,7 +132,7 @@ async def delete_instrument_by_ticker(ticker: str, db: AsyncSession = Depends(ge
     if db_instrument is None:
         raise HTTPException(status_code=404, detail=f"Ticker {ticker} Not Found")
 
-    await db.execute(delete(BalanceModel).filter_by(instrument_ticker=ticker))
+    await db.execute(delete(BalanceModel).where(BalanceModel.instrument_ticker == ticker))
 
     await db.delete(db_instrument)
     await db.commit()
@@ -274,7 +274,7 @@ def aggregate_orders(orders: List[OrderModel], is_bid: bool) -> List[Level]:
 async def get_transactions_by_ticker(ticker: str, limit: int, db: AsyncSession):
     result = await db.execute(
         select(TransactionModel)
-        .filter_by(ticker=ticker)
+        .where(TransactionModel.ticker == ticker)
         .order_by(TransactionModel.timestamp.desc())
         .limit(limit)
     )
@@ -487,7 +487,7 @@ async def execute_market_order(market_order: OrderModel, db: AsyncSession):
                 OrderModel.ticker == ticker,
                 OrderModel.direction == opposite_direction,
                 OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED]),
-                OrderModel.price is not None
+                OrderModel.price.isnot(None)
             )
         )
         .order_by(OrderModel.price.asc() if is_buy else OrderModel.price.desc())
@@ -504,6 +504,14 @@ async def execute_market_order(market_order: OrderModel, db: AsyncSession):
         trade_qty = min(remaining_qty, available_qty)
         trade_price = limit_order.price
         seller_id = limit_order.user_id
+        
+        counterparty_balance = await check_balance_record(seller_id, ticker, db)
+
+        if counterparty_balance is None or (
+            (is_buy and counterparty_balance.amount < trade_qty) or
+            (not is_buy and counterparty_balance.amount < trade_qty * trade_price)
+        ):
+            continue
 
         await process_trade(is_buy, user_id, seller_id, ticker, trade_qty, trade_price, db)
         await update_order_status_and_filled(limit_order, trade_qty, db)
@@ -515,20 +523,22 @@ async def execute_market_order(market_order: OrderModel, db: AsyncSession):
             break
 
     if total_filled == 0:
+        market_order.status = OrderStatus.CANCELLED
+        db.add(market_order)
+        await db.commit()
         raise HTTPException(status_code=400, detail="No matching orders in the orderbook")
 
-    # обновляем сам рыночный ордер
-    market_order.filled = total_filled
-    market_order.status = (
-        OrderStatus.EXECUTED
-        if total_filled == market_order.qty
-        else OrderStatus.PARTIALLY_EXECUTED
-    )
-
+    else:
+        # обновляем сам рыночный ордер
+        market_order.filled = total_filled
+        market_order.status = OrderStatus.EXECUTED
     db.add(market_order)
     await db.commit()
     await db.refresh(market_order)
     return market_order
+
+
+
 
 
 async def execute_limit_order(limit_order: OrderModel, db: AsyncSession):
