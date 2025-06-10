@@ -73,7 +73,7 @@ async def get_user_by_api_key(api_key: UUID, db: AsyncSession = Depends(get_db))
 
 async def check_user_is_admin(authorization: UUID = Depends(api_key_header), db: AsyncSession = Depends(get_db)):
     auth_user = await get_user_by_api_key(authorization, db)
-    if (auth_user is None) or not (auth_user.role == "ADMIN"):
+    if (auth_user is None) or (auth_user.role != "ADMIN"):
         raise HTTPException(status_code=403, detail="Forbidden")
     return True
 
