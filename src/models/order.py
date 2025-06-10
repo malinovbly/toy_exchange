@@ -5,7 +5,6 @@ import uuid
 from datetime import datetime
 from enum import Enum
 
-
 from src.schemas.schemas import OrderStatus, Direction
 from src.database.database import Base
 

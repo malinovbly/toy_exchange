@@ -11,3 +11,4 @@ class BalanceModel(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("user.id"), index=True, primary_key=True)
     instrument_ticker = Column(String, ForeignKey("instrument.ticker"), index=True, primary_key=True)
     amount = Column(Integer, default=0)
+    reserved = Column(Integer, default=0)

@@ -73,7 +73,7 @@ async def get_user_by_api_key(api_key: UUID, db: AsyncSession = Depends(get_db))
 
 async def check_user_is_admin(authorization: UUID = Depends(api_key_header), db: AsyncSession = Depends(get_db)):
     auth_user = await get_user_by_api_key(authorization, db)
-    if (auth_user is None) or (auth_user.role != "ADMIN"):
+    if (auth_user is None) or not (auth_user.role == "ADMIN"):
         raise HTTPException(status_code=403, detail="Forbidden")
     return True
 
@@ -218,7 +218,21 @@ async def user_balance_withdraw(request: Body_withdraw_api_v1_admin_balance_with
             await db.commit()
         else:
             raise HTTPException(status_code=403, detail="Insufficient Funds")
+        
 
+async def get_available_balance(user_id: UUID, ticker: str, db: AsyncSession) -> int:
+    rec = await check_balance_record(user_id, ticker, db)
+    return 0 if rec is None else rec.amount - rec.reserved
+
+async def reserve_balance(user_id: UUID, ticker: str, delta: int, db: AsyncSession):
+    rec = await check_balance_record(user_id, ticker, db)
+    if rec is None:
+        raise HTTPException(status_code=400, detail="Hmmmm")
+    rec.reserved += delta
+    if rec.reserved < 0:
+        rec.reserved = 0
+    await db.commit()
+    await db.refresh(rec)
 
 # orderbook
 async def get_bids(ticker: str, limit: int, db: AsyncSession):
@@ -445,17 +459,25 @@ async def process_trade(
     ticker_rub = "RUB"
 
     if is_buy:
+        # Снимаем резерв со стороны покупателя (RUB)
+        await reserve_balance(user_id, ticker_rub, -trade_amount, db)
+
         await update_user_balance(user_id, ticker_rub, -trade_amount, db=db)
         await update_user_balance(user_id, ticker, trade_qty, db=db)
         await update_user_balance(counterparty_id, ticker, -trade_qty, db=db)
         await update_user_balance(counterparty_id, ticker_rub, trade_amount, db=db)
+
     else:
+        # Снимаем резерв со стороны продавца (актив)
+        await reserve_balance(user_id, ticker, -trade_qty, db)
+
         await update_user_balance(user_id, ticker, -trade_qty, db=db)
         await update_user_balance(user_id, ticker_rub, trade_amount, db=db)
         await update_user_balance(counterparty_id, ticker_rub, -trade_amount, db=db)
         await update_user_balance(counterparty_id, ticker, trade_qty, db=db)
 
     await record_transaction(ticker, trade_price, trade_qty, db)
+
 
 
 async def update_order_status_and_filled(order: OrderModel, filled_increment: int, db: AsyncSession):

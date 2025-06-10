@@ -55,7 +55,7 @@ async def delete_user(
         raise HTTPException(status_code=403, detail="Forbidden")
 
     except Exception:
-        raise HTTPException(status_code=404, detail="Invalid Authorization")
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 @router.post(
@@ -105,7 +105,7 @@ async def delete_instrument(
         return Ok
 
     except Exception:
-        raise HTTPException(status_code=404, detail="Invalid Authorization")
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 @router.post(
@@ -129,7 +129,7 @@ async def deposit(
         return Ok
 
     except Exception:
-        raise HTTPException(status_code=404, detail="Invalid Authorization")
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 @router.post(
@@ -153,4 +153,4 @@ async def withdraw(
         return Ok
 
     except Exception:
-        raise HTTPException(status_code=404, detail="Invalid Authorization")
+        raise HTTPException(status_code=401, detail="Unauthorized")
