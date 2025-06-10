@@ -5,7 +5,6 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.database import get_db
-
 from src.models.order import OrderStatus
 from src.security import api_key_header
 from src.schemas.schemas import (
@@ -22,12 +21,10 @@ from src.utils import (
     get_order_by_id,
     get_user_by_api_key,
     get_orders_by_user,
-    cancel_order,
     get_instrument_by_ticker,
     execute_market_order,
     execute_limit_order,
     get_api_key,
-    check_balance_record,
     create_order_dict,
     get_available_balance,
     reserve_balance

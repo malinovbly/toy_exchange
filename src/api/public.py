@@ -4,14 +4,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 
 from src.schemas.schemas import NewUser, User, Instrument, L2OrderBook, Transaction
-from src.utils import (check_username,
-                       get_all_instruments,
-                       get_instrument_by_ticker,
-                       register_new_user,
-                       aggregate_orders,
-                       get_bids,
-                       get_asks,
-                       get_transactions_by_ticker)
+from src.utils import (
+    check_username,
+    get_all_instruments,
+    get_instrument_by_ticker,
+    register_new_user,
+    aggregate_orders,
+    get_bids,
+    get_asks,
+    get_transactions_by_ticker
+)
 from src.database.database import get_db
 
 
