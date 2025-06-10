@@ -79,7 +79,7 @@ async def add_instrument(
         return Ok
 
     except Exception:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+        raise HTTPException(status_code=404, detail="Invalid Authorization")
 
 
 @router.delete(

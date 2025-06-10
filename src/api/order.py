@@ -5,6 +5,8 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.database import get_db
+
+from src.models.order import OrderStatus
 from src.security import api_key_header
 from src.schemas.schemas import (
     LimitOrderBody,
@@ -26,7 +28,9 @@ from src.utils import (
     execute_limit_order,
     get_api_key,
     check_balance_record,
-    create_order_dict
+    create_order_dict,
+    get_available_balance,
+    reserve_balance
 )
 
 summary_tags = {
@@ -70,20 +74,20 @@ async def create_order(
             )
 
         # Проверка кол-ва тикера (если продаем)
-        balance = await check_balance_record(user_id, order_data.ticker, db)
-        if (balance is None or balance.amount < order_data.qty) and order_data.direction == Direction.SELL:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Insufficient {order_data.ticker} balance for order"
-            )
-        
-        # Проверка кол-ва рублей (если покупаем)
-        elif order_data.direction == Direction.BUY:
-            rub_balance = await check_balance_record(user_id, "RUB", db)
-            total_cost = order_data.qty * getattr(order_data, "price", 1) 
+        if order_data.direction == Direction.SELL:
+            avail = await get_available_balance(user_id, order_data.ticker, db)
+            if avail < order_data.qty:
+                raise HTTPException(400, f"Insufficient {order_data.ticker} balance for order.")
+            # резервируем 
+            await reserve_balance(user_id, order_data.ticker, +order_data.qty, db)
 
-            if rub_balance is None or rub_balance.amount < total_cost:
-                raise HTTPException(status_code=400, detail=f"Insufficient RUB balance for order")
+        elif order_data.direction == Direction.BUY:
+            if isinstance(order_data, LimitOrderBody):
+                cost = order_data.qty * order_data.price
+                avail_rub = await get_available_balance(user_id, "RUB", db)
+                if avail_rub < cost:
+                    raise HTTPException(400, "Insufficient RUB balance for order")
+                await reserve_balance(user_id, "RUB", +cost, db)
 
         # Рыночная заявка
         if isinstance(order_data, MarketOrderBody):
@@ -177,7 +181,7 @@ async def get_order(
 @router.delete(
     path="/api/v1/order/{order_id}",
     tags=["order"],
-    response_model=Union[LimitOrder, MarketOrder],
+    response_model=Ok,
     summary=summary_tags["cancel_order"]
 )
 async def delete_order_api(
@@ -194,8 +198,36 @@ async def delete_order_api(
         if auth_user is None:
             raise HTTPException(status_code=401, detail="Unauthorized")
 
-        await cancel_order(UUID(order_id), db)
+        # Получаем ордер
+        db_order = await get_order_by_id(UUID(order_id), db)
+        if db_order is None:
+            raise HTTPException(status_code=404, detail="Order not found")
+
+        if db_order.status in [OrderStatus.EXECUTED, OrderStatus.CANCELLED]:
+            raise HTTPException(status_code=400, detail="Order already executed or cancelled")
+
+        # Разморозка оставшегося объема
+        unfilled_qty = db_order.qty - db_order.filled
+        if unfilled_qty > 0:
+            ticker = db_order.ticker
+            direction = db_order.direction
+            user_id = db_order.user_id
+
+            if direction == Direction.BUY:
+                # Возвращаем RUB
+                refund = unfilled_qty * (db_order.price or 1)
+                await reserve_balance(user_id, "RUB", -refund, db)
+            else:
+                # Возвращаем тикер
+                await reserve_balance(user_id, ticker, -unfilled_qty, db)
+
+        # Отменяем ордер
+        db_order.status = OrderStatus.CANCELLED
+        await db.commit()
+
         return Ok
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
