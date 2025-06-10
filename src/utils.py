@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import update, delete, and_
 from sqlalchemy.future import select
 from datetime import datetime
-from typing import Optional, Union, List
+from typing import Union, List
 
 from src.models.balance import BalanceModel
 from src.models.instrument import InstrumentModel
@@ -14,16 +14,19 @@ from src.models.transaction import TransactionModel
 from src.models.user import UserModel
 from src.database.database import get_db
 from src.security import api_key_header
-from src.schemas.schemas import (NewUser,
-                                 Level,
-                                 Instrument,
-                                 Body_deposit_api_v1_admin_balance_deposit_post,
-                                 Body_withdraw_api_v1_admin_balance_withdraw_post,
-                                 LimitOrderBody,
-                                 MarketOrderBody,
-                                 OrderStatus,
-                                 Direction
-                                 )
+from src.schemas.schemas import (
+    NewUser,
+    Level,
+    Instrument,
+    Body_deposit_api_v1_admin_balance_deposit_post,
+    Body_withdraw_api_v1_admin_balance_withdraw_post,
+    LimitOrderBody,
+    LimitOrder,
+    MarketOrderBody,
+    MarketOrder,
+    OrderStatus,
+    Direction
+)
 
 
 # users
@@ -310,46 +313,43 @@ async def create_order_in_db(order_data: Union[LimitOrderBody, MarketOrderBody],
     return db_order
 
 
+def create_order_dict(order: OrderModel):
+    order_dict = {
+        "id": order.id,
+        "status": order.status,
+        "user_id": order.user_id,
+        "timestamp": order.timestamp
+    }
+
+    if order.type == "MARKET":
+        order_body = MarketOrderBody(
+            direction=order.direction,
+            ticker=order.ticker,
+            qty=order.qty
+        )
+        order_dict["body"] = order_body
+        return MarketOrder(**order_dict)
+
+    elif order.type == "LIMIT":
+        order_body = LimitOrderBody(
+            direction=order.direction,
+            ticker=order.ticker,
+            qty=order.qty,
+            price=order.price
+        )
+        order_dict["body"] = order_body
+        order_dict["filled"] = order.filled
+        return LimitOrder(**order_dict)
+
+
 async def get_order_by_id(order_id: UUID, db: AsyncSession):
     result = await db.execute(select(OrderModel).filter_by(id=order_id))
     return result.scalar_one_or_none()
 
 
-async def delete_order_by_id(order_id: UUID, db: AsyncSession):
-    db_order = await get_order_by_id(order_id, db)
-    if db_order is None:
-        raise HTTPException(status_code=404, detail="Order Not Found")
-    await db.delete(db_order)
-    await db.commit()
-    return db_order
-
-
 async def get_orders_by_user(user_id: UUID, db: AsyncSession):
     result = await db.execute(select(OrderModel).filter_by(user_id=user_id))
     return list(result.scalars().all())
-
-
-async def list_all_orders(db: AsyncSession):
-    result = await db.execute(select(OrderModel))
-    return list(result.scalars().all())
-
-
-async def update_order_status(
-        order_id: UUID,
-        new_status: OrderStatus,
-        db: AsyncSession,
-        filled_qty: Optional[int] = None):
-    db_order = await get_order_by_id(order_id, db)
-    if db_order is None:
-        raise HTTPException(status_code=404, detail="Order Not Found")
-
-    db_order.status = new_status
-    if filled_qty is not None:
-        db_order.filled = filled_qty
-
-    await db.commit()
-    await db.refresh(db_order)
-    return db_order
 
 
 async def get_orders_by_ticker(ticker: str, db: AsyncSession):
@@ -385,7 +385,6 @@ async def cancel_order(order_id: UUID, db: AsyncSession):
 
     await db.commit()
     await db.refresh(db_order)
-    return db_order
 
 
 async def update_user_balance(

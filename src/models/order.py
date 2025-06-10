@@ -3,9 +3,16 @@ from sqlalchemy import Column, String, Integer, Enum as SqlEnum, DateTime
 from sqlalchemy.dialects.postgresql import UUID
 import uuid
 from datetime import datetime
+from enum import Enum
+
 
 from src.schemas.schemas import OrderStatus, Direction
 from src.database.database import Base
+
+
+class OrderType(str, Enum):
+    LIMIT = "LIMIT"
+    MARKET = "MARKET"
 
 
 class OrderModel(Base):
@@ -23,6 +30,8 @@ class OrderModel(Base):
     price = Column(Integer, nullable=True)
     
     filled = Column(Integer, nullable=False, default=0)
+
+    type = Column(SqlEnum(OrderType), nullable=False)
 
     def to_limit_order_dict(self):
         return {
