@@ -20,7 +20,7 @@ class OrderModel(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     status = Column(SqlEnum(OrderStatus), nullable=False, default=OrderStatus.NEW)
     user_id = Column(UUID(as_uuid=True), nullable=False)
-    timestamp = Column(DateTime, nullable=False, default=datetime.now(timezone.utc))
+    timestamp = Column(DateTime(timezone=True), nullable=False, default=datetime.now(timezone.utc))
     
     direction = Column(SqlEnum(Direction), nullable=False)
     ticker = Column(String, nullable=False)
