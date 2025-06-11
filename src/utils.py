@@ -4,7 +4,7 @@ from fastapi import Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import update, delete, and_
 from sqlalchemy.future import select
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Union, List
 
 from src.models.balance import BalanceModel
@@ -300,7 +300,7 @@ async def record_transaction(ticker: str, price: int, qty: int, db: AsyncSession
         ticker=ticker,
         price=price,
         qty=qty,
-        timestamp=datetime.utcnow()
+        timestamp=datetime.now(timezone.utc)
     )
     db.add(transaction)
     await db.commit()
@@ -309,33 +309,25 @@ async def record_transaction(ticker: str, price: int, qty: int, db: AsyncSession
 # orders
 async def create_order_in_db(order_data: Union[LimitOrderBody, MarketOrderBody], price: int, user_id: UUID,
                              db: AsyncSession):
-    if isinstance(order_data, MarketOrderBody):
-        db_order = OrderModel(
-            id=uuid4(),
-            status=OrderStatus.NEW,
-            user_id=user_id,
-            timestamp=datetime.utcnow(),
-            direction=order_data.direction,
-            ticker=order_data.ticker,
-            qty=order_data.qty,
-            price=price,
-            filled=-1,
-            type="MARKET"
-        )
-    else:
-        db_order = OrderModel(
-            id=uuid4(),
-            status=OrderStatus.NEW,
-            user_id=user_id,
-            timestamp=datetime.utcnow(),
-            direction=order_data.direction,
-            ticker=order_data.ticker,
-            qty=order_data.qty,
-            price=price,
-            filled=0,
-            type="LIMIT"
-        )
+    order_dict = {
+        "id": uuid4(),
+        "status": OrderStatus.NEW,
+        "user_id": user_id,
+        "timestamp": datetime.now(timezone.utc),
+        "direction": order_data.direction,
+        "ticker": order_data.ticker,
+        "qty": order_data.qty,
+        "price": price
+    }
 
+    if isinstance(order_data, MarketOrderBody):
+        order_dict["filled"] = -1
+        order_dict["type"] = "MARKET"
+    elif isinstance(order_data, LimitOrderBody):
+        order_dict["filled"] = 0
+        order_dict["type"] = "LIMIT"
+
+    db_order = OrderModel(**order_dict)
     db.add(db_order)
     await db.commit()
     await db.refresh(db_order)

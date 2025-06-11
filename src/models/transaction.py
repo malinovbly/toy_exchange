@@ -1,6 +1,6 @@
 # src/models/transaction.py
 from sqlalchemy import Column, Integer, String, DateTime
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.database.database import Base
 
@@ -14,4 +14,4 @@ class TransactionModel(Base):
     ticker = Column(String, nullable=False)
     price = Column(Integer, nullable=False)
     qty = Column(Integer, nullable=False)
-    timestamp = Column(DateTime, nullable=False, default=datetime.utcnow)
+    timestamp = Column(DateTime(timezone=True), nullable=False, default=datetime.now(timezone.utc))
