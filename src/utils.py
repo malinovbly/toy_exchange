@@ -4,7 +4,7 @@ from fastapi import Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import update, delete, and_
 from sqlalchemy.future import select
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Union, List
 
 from src.models.balance import BalanceModel
@@ -300,7 +300,7 @@ async def record_transaction(ticker: str, price: int, qty: int, db: AsyncSession
         ticker=ticker,
         price=price,
         qty=qty,
-        timestamp=datetime.utcnow()
+        timestamp=datetime.now(timezone.utc)
     )
     db.add(transaction)
     await db.commit()
@@ -314,7 +314,7 @@ async def create_order_in_db(order_data: Union[LimitOrderBody, MarketOrderBody],
             id=uuid4(),
             status=OrderStatus.NEW,
             user_id=user_id,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             direction=order_data.direction,
             ticker=order_data.ticker,
             qty=order_data.qty,
@@ -327,7 +327,7 @@ async def create_order_in_db(order_data: Union[LimitOrderBody, MarketOrderBody],
             id=uuid4(),
             status=OrderStatus.NEW,
             user_id=user_id,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             direction=order_data.direction,
             ticker=order_data.ticker,
             qty=order_data.qty,
