@@ -76,11 +76,12 @@ async def create_order(
             await reserve_balance(user_id, order_data.ticker, +order_data.qty, db)
 
         elif order_data.direction == Direction.BUY:
-            cost = order_data.qty * order_data.price
-            avail_rub = await get_available_balance(user_id, "RUB", db)
-            if avail_rub < cost:
-                raise HTTPException(status_code=400, detail="Insufficient 'RUB' balance for order")
-            await reserve_balance(user_id, "RUB", +cost, db)
+            if isinstance(order_data, LimitOrderBody):
+                cost = order_data.qty * order_data.price
+                avail_rub = await get_available_balance(user_id, "RUB", db)
+                if avail_rub < cost:
+                    raise HTTPException(status_code=400, detail="Insufficient 'RUB' balance for order")
+                await reserve_balance(user_id, "RUB", +cost, db)
 
         # Рыночная заявка
         if isinstance(order_data, MarketOrderBody):
