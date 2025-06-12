@@ -232,7 +232,8 @@ async def reserve_balance(user_id: UUID, ticker: str, delta: int, db: AsyncSessi
     if delta > 0 and rec.reserved + delta > rec.amount:
         raise HTTPException(status_code=400, detail="Insufficient free balance")
     if delta < 0 and rec.reserved + delta < 0:
-        raise HTTPException(status_code=400, detail="Can't de-reserve more than reserved")
+        delta = -rec.reserved
+        # raise HTTPException(status_code=400, detail="Can't de-reserve more than reserved")
 
     rec.reserved += delta
     db.add(rec)
