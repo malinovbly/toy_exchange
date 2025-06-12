@@ -335,8 +335,6 @@ async def create_order_in_db(order_data: Union[LimitOrderBody, MarketOrderBody],
 
     db_order = OrderModel(**order_dict)
     db.add(db_order)
-    await db.commit()
-    await db.refresh(db_order)
     return db_order
 
 

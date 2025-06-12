@@ -84,12 +84,12 @@ async def create_order(
 
         # Рыночная заявка
         if isinstance(order_data, MarketOrderBody):
-            db_order = await create_order_in_db(order_data, price=None, user_id=user_id, db=db)
+            db_order = await create_order_in_db(order_data=order_data, price=None, user_id=user_id, db=db)
             executed_order = await execute_market_order(db_order, db=db)
 
         # Лимитная заявка
         else:
-            db_order = await create_order_in_db(order_data, price=order_data.price, user_id=user_id, db=db)
+            db_order = await create_order_in_db(order_data=order_data, price=order_data.price, user_id=user_id, db=db)
             executed_order = await execute_limit_order(db_order, db=db)
 
         await db.commit()
