@@ -151,8 +151,7 @@ async def get_order(
         db_order = await get_order_by_id(UUID(order_id), db)
         if db_order is None:
             raise HTTPException(status_code=404, detail="Order not found")
-        # if auth_user.id != db_order.user_id:
-        if (auth_user.id != db_order.user_id) or (auth_user.role != UserRole.ADMIN):
+        if auth_user.id != db_order.user_id:
             raise HTTPException(status_code=403, detail="Forbidden")
 
         return create_order_dict(db_order)
