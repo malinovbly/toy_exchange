@@ -512,6 +512,8 @@ async def execute_market_order(market_order: OrderModel, db: AsyncSession):
 
     total_filled = 0
     for limit_order in limit_orders:
+        if limit_order.user_id == market_order.user_id:
+            continue
         available_qty = limit_order.qty - limit_order.filled
         if available_qty <= 0:
             continue
@@ -578,6 +580,8 @@ async def execute_limit_order(limit_order: OrderModel, db: AsyncSession):
 
     total_filled = 0
     for match in matching_orders:
+        if match.user_id == limit_order.user_id:
+            continue
         available_qty = match.qty - match.filled
         if available_qty <= 0:
             continue
