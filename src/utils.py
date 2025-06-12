@@ -2,10 +2,10 @@
 from uuid import uuid4, UUID
 from fastapi import Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import update, delete, and_
+from sqlalchemy import update, delete, and_, asc, desc
 from sqlalchemy.future import select
 from datetime import datetime, timezone
-from typing import Union, List
+from typing import Union, List, Optional
 
 from src.models.balance import BalanceModel
 from src.models.instrument import InstrumentModel
@@ -235,9 +235,7 @@ async def reserve_balance(user_id: UUID, ticker: str, delta: int, db: AsyncSessi
         raise HTTPException(status_code=400, detail="Can't de-reserve more than reserved")
 
     rec.reserved += delta
-
-    await db.commit()
-    await db.refresh(rec)
+    db.add(rec)
 
 
 # orderbook
@@ -252,7 +250,7 @@ async def get_bids(ticker: str, limit: int, db: AsyncSession):
                 OrderModel.price is not None
             )
         )
-        .order_by(OrderModel.price.asc())
+        .order_by(asc(OrderModel.price))
         .limit(limit)
     )
     return list(db_asks.scalars().all())
@@ -269,7 +267,7 @@ async def get_asks(ticker: str, limit: int, db: AsyncSession):
                 OrderModel.price is not None
             )
         )
-        .order_by(OrderModel.price.asc())
+        .order_by(asc(OrderModel.price))
         .limit(limit)
     )
     return list(db_asks.scalars().all())
@@ -298,7 +296,7 @@ async def get_transactions_by_ticker(ticker: str, limit: int, db: AsyncSession):
     result = await db.execute(
         select(TransactionModel)
         .filter_by(ticker=ticker)
-        .order_by(TransactionModel.timestamp.desc())
+        .order_by(desc(TransactionModel.timestamp))
         .limit(limit)
     )
     return list(result.scalars().all())
@@ -312,12 +310,11 @@ async def record_transaction(ticker: str, price: int, qty: int, db: AsyncSession
         timestamp=datetime.now(timezone.utc)
     )
     db.add(db_transaction)
-    await db.commit()
 
 
 # orders
 async def create_order_in_db(order_data: Union[LimitOrderBody, MarketOrderBody],
-                             price: int, user_id: UUID, db: AsyncSession):
+                             price: Optional[int], user_id: UUID, db: AsyncSession):
     order_dict = {
         "id": uuid4(),
         "status": OrderStatus.NEW,
@@ -418,15 +415,10 @@ async def update_user_balance(
 
     # Выдается и при слуаче нехватки баланса юзера, и при случае нехватки баланса другого трейдера
     if new_amount < 0:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Insufficient balance for {ticker}"
-        )
+        raise HTTPException(status_code=400, detail=f"Insufficient balance for {ticker}")
 
     db_balance.amount = new_amount
-
-    await db.commit()
-    await db.refresh(db_balance)
+    db.add(db_balance)
     return db_balance
 
 
@@ -471,9 +463,7 @@ async def update_order_status_and_filled(order: OrderModel, filled_increment: in
         order.status = OrderStatus.PARTIALLY_EXECUTED
     else:
         order.status = OrderStatus.NEW
-
     db.add(order)
-    await db.commit()
 
 
 async def execute_market_order(market_order: OrderModel, db: AsyncSession):
@@ -484,6 +474,7 @@ async def execute_market_order(market_order: OrderModel, db: AsyncSession):
 
     is_buy = direction == Direction.BUY
     opposite_direction = Direction.SELL if is_buy else Direction.BUY
+    ticker_rub = "RUB"
 
     result = await db.execute(
         select(OrderModel)
@@ -495,12 +486,11 @@ async def execute_market_order(market_order: OrderModel, db: AsyncSession):
                 OrderModel.price.isnot(None)
             )
         )
-        .order_by(OrderModel.price.asc() if is_buy else OrderModel.price.desc())
+        .order_by(asc(OrderModel.price) if is_buy else desc(OrderModel.price))
     )
     limit_orders = list(result.scalars().all())
 
     total_filled = 0
-
     for limit_order in limit_orders:
         available_qty = limit_order.qty - limit_order.filled
         if available_qty <= 0:
@@ -509,12 +499,13 @@ async def execute_market_order(market_order: OrderModel, db: AsyncSession):
         trade_qty = min(remaining_qty, available_qty)
         trade_price = limit_order.price
         seller_id = limit_order.user_id
-        
-        counterparty_balance = await check_balance_record(seller_id, ticker, db)
 
-        if counterparty_balance is None or (
-            (is_buy and counterparty_balance.amount < trade_qty) or
-            (not is_buy and counterparty_balance.amount < trade_qty * trade_price)
+        counterparty_ticker_balance = await check_balance_record(seller_id, ticker, db)
+        counterparty_rub_balance = await check_balance_record(seller_id, ticker_rub, db)
+
+        if counterparty_ticker_balance is None or (
+            (is_buy and counterparty_ticker_balance.amount < trade_qty) or
+            (not is_buy and counterparty_rub_balance.amount < trade_qty * trade_price)
         ):
             continue
 
@@ -527,31 +518,24 @@ async def execute_market_order(market_order: OrderModel, db: AsyncSession):
         if remaining_qty == 0:
             break
 
-    if total_filled == 0:
-        market_order.status = OrderStatus.CANCELLED
-        db.add(market_order)
-        await db.commit()
-        raise HTTPException(status_code=400, detail="No matching orders in the orderbook")
+    if total_filled < market_order.qty:
+        raise HTTPException(status_code=400, detail="Not enough liquidity to fill market order")
 
-    else:
-        # обновляем сам рыночный ордер
-        market_order.filled = total_filled
-        market_order.status = OrderStatus.EXECUTED
-    db.add(market_order)
-    await db.commit()
-    await db.refresh(market_order)
+    market_order.status = OrderStatus.EXECUTED
     return market_order
 
 
 async def execute_limit_order(limit_order: OrderModel, db: AsyncSession):
-    remaining_qty = limit_order.qty
+    remaining_qty = limit_order.qty - limit_order.filled
     ticker = limit_order.ticker
     direction = limit_order.direction
     user_id = limit_order.user_id
 
     is_buy = direction == Direction.BUY
     opposite_direction = Direction.SELL if is_buy else Direction.BUY
+    ticker_rub = "RUB"
 
+    price_condition = OrderModel.price <= limit_order.price if is_buy else OrderModel.price >= limit_order.price
     result = await db.execute(
         select(OrderModel)
         .where(
@@ -559,15 +543,15 @@ async def execute_limit_order(limit_order: OrderModel, db: AsyncSession):
                 OrderModel.ticker == ticker,
                 OrderModel.direction == opposite_direction,
                 OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED]),
-                OrderModel.price is not None,
-                OrderModel.price <= limit_order.price if is_buy else OrderModel.price >= limit_order.price
+                OrderModel.price.isnot(None),
+                price_condition
             )
         )
-        .order_by(OrderModel.price.asc() if is_buy else OrderModel.price.desc())
+        .order_by(asc(OrderModel.price) if is_buy else desc(OrderModel.price))
     )
     matching_orders = list(result.scalars().all())
-    total_filled = 0
 
+    total_filled = 0
     for match in matching_orders:
         available_qty = match.qty - match.filled
         if available_qty <= 0:
@@ -578,11 +562,12 @@ async def execute_limit_order(limit_order: OrderModel, db: AsyncSession):
         trade_qty = min(remaining_qty, available_qty)
         trade_price = match.price
 
-        counterparty_balance = await check_balance_record(counterparty_id, ticker, db)
+        counterparty_ticker_balance = await check_balance_record(counterparty_id, ticker, db)
+        counterparty_rub_balance = await check_balance_record(counterparty_id, ticker_rub, db)
 
-        if counterparty_balance is None or (
-            (is_buy and counterparty_balance.amount < trade_qty) or
-            (not is_buy and counterparty_balance.amount < trade_qty * trade_price)
+        if counterparty_ticker_balance is None or (
+                (is_buy and counterparty_ticker_balance.amount < trade_qty) or
+                (not is_buy and counterparty_rub_balance.amount < trade_qty * trade_price)
         ):
             continue
 
@@ -596,16 +581,14 @@ async def execute_limit_order(limit_order: OrderModel, db: AsyncSession):
             break
 
     # Обновление исходной лимитной заявки
-    limit_order.filled = total_filled
-    if total_filled == 0:
-        limit_order.status = OrderStatus.NEW  
-    elif total_filled < limit_order.qty:
+    limit_order.filled += total_filled
+
+    if limit_order.filled == 0:
+        limit_order.status = OrderStatus.NEW
+    elif limit_order.filled < limit_order.qty:
         limit_order.status = OrderStatus.PARTIALLY_EXECUTED
     else:
         limit_order.status = OrderStatus.EXECUTED
 
     db.add(limit_order)
-    await db.commit()
-    await db.refresh(limit_order)
-
     return limit_order
