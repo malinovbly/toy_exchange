@@ -76,7 +76,6 @@ async def create_order(
             await reserve_balance(user_id, order_data.ticker, +order_data.qty, db)
 
         elif order_data.direction == Direction.BUY:
-            # if isinstance(order_data, LimitOrderBody):
             cost = order_data.qty * order_data.price
             avail_rub = await get_available_balance(user_id, "RUB", db)
             if avail_rub < cost:
@@ -93,11 +92,15 @@ async def create_order(
             db_order = await create_order_in_db(order_data, price=order_data.price, user_id=user_id, db=db)
             executed_order = await execute_limit_order(db_order, db=db)
 
+        await db.commit()
+        await db.refresh(executed_order)
         return CreateOrderResponse(order_id=executed_order.id)
 
-    except HTTPException as he:
-        raise he
+    except HTTPException:
+        await db.rollback()
+        raise
     except Exception as e:
+        await db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -216,7 +219,6 @@ async def cancel_order(
         # Отменяем ордер
         db_order.status = OrderStatus.CANCELLED
         await db.commit()
-
         return Ok
 
     except HTTPException as he:
