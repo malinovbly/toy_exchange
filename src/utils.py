@@ -29,6 +29,14 @@ from src.schemas.schemas import (
 )
 
 
+def get_api_key(authorization: str):
+    token = authorization.split(' ')
+    if len(token) == 1:
+        raise HTTPException(status_code=404, detail="Invalid Authorization")
+    else:
+        return token[1]
+
+
 # users
 async def register_new_user(user: NewUser, db: AsyncSession = Depends(get_db)):
     user_id = uuid4()
@@ -46,14 +54,6 @@ async def register_new_user(user: NewUser, db: AsyncSession = Depends(get_db)):
     await db.refresh(db_user)
 
     return db_user
-
-
-def get_api_key(authorization: str):
-    token = authorization.split(' ')
-    if len(token) == 1:
-        raise HTTPException(status_code=404, detail="Invalid Authorization")
-    else:
-        return token[1]
 
 
 async def check_username(username: str, db: AsyncSession = Depends(get_db)):
@@ -233,7 +233,6 @@ async def reserve_balance(user_id: UUID, ticker: str, delta: int, db: AsyncSessi
         raise HTTPException(status_code=400, detail="Insufficient free balance")
     if delta < 0 and rec.reserved + delta < 0:
         delta = -rec.reserved
-        # raise HTTPException(status_code=400, detail="Can't de-reserve more than reserved")
 
     rec.reserved += delta
     db.add(rec)
@@ -251,6 +250,29 @@ async def lock_balances(locks: list[tuple[UUID, str]], db: AsyncSession):
             )
             .with_for_update()
         )
+
+
+async def update_user_balance(
+        user_id: UUID,
+        ticker: str,
+        amount_change: int,
+        db: AsyncSession) -> BalanceModel:
+    db_balance = await check_balance_record(user_id, ticker, db)
+    if db_balance is None:
+        db_balance = BalanceModel(
+            user_id=user_id,
+            instrument_ticker=ticker,
+            amount=0
+        )
+        db.add(db_balance)
+
+    new_amount = db_balance.amount + amount_change
+    if new_amount < 0:
+        raise HTTPException(status_code=400, detail=f"Insufficient balance for {ticker}")
+
+    db_balance.amount = new_amount
+    db.add(db_balance)
+    return db_balance
 
 
 # orderbook
@@ -328,31 +350,6 @@ async def record_transaction(ticker: str, price: int, qty: int, db: AsyncSession
 
 
 # orders
-async def create_order_in_db(order_data: Union[LimitOrderBody, MarketOrderBody],
-                             price: Optional[int], user_id: UUID, db: AsyncSession):
-    order_dict = {
-        "id": uuid4(),
-        "status": OrderStatus.NEW,
-        "user_id": user_id,
-        "timestamp": datetime.now(timezone.utc),
-        "direction": order_data.direction,
-        "ticker": order_data.ticker,
-        "qty": order_data.qty,
-        "price": price
-    }
-
-    if isinstance(order_data, MarketOrderBody):
-        order_dict["filled"] = -1
-        order_dict["type"] = "MARKET"
-    elif isinstance(order_data, LimitOrderBody):
-        order_dict["filled"] = 0
-        order_dict["type"] = "LIMIT"
-
-    db_order = OrderModel(**order_dict)
-    db.add(db_order)
-    return db_order
-
-
 def create_order_dict(order: OrderModel):
     order_dict = {
         "id": order.id,
@@ -382,6 +379,31 @@ def create_order_dict(order: OrderModel):
         return LimitOrder(**order_dict)
 
 
+async def create_order_in_db(order_data: Union[LimitOrderBody, MarketOrderBody],
+                             price: Optional[int], user_id: UUID, db: AsyncSession):
+    order_dict = {
+        "id": uuid4(),
+        "status": OrderStatus.NEW,
+        "user_id": user_id,
+        "timestamp": datetime.now(timezone.utc),
+        "direction": order_data.direction,
+        "ticker": order_data.ticker,
+        "qty": order_data.qty,
+        "price": price
+    }
+
+    if isinstance(order_data, MarketOrderBody):
+        order_dict["filled"] = -1
+        order_dict["type"] = "MARKET"
+    elif isinstance(order_data, LimitOrderBody):
+        order_dict["filled"] = 0
+        order_dict["type"] = "LIMIT"
+
+    db_order = OrderModel(**order_dict)
+    db.add(db_order)
+    return db_order
+
+
 async def get_order_by_id(order_id: UUID, db: AsyncSession):
     result = await db.execute(select(OrderModel).filter_by(id=order_id))
     return result.scalar_one_or_none()
@@ -390,49 +412,6 @@ async def get_order_by_id(order_id: UUID, db: AsyncSession):
 async def get_orders_by_user(user_id: UUID, db: AsyncSession):
     result = await db.execute(select(OrderModel).filter_by(user_id=user_id))
     return list(result.scalars().all())
-
-
-async def get_orders_by_ticker(ticker: str, db: AsyncSession):
-    result = await db.execute(select(OrderModel).filter_by(ticker=ticker))
-    return list(result.scalars().all())
-
-
-async def get_active_orders_by_ticker(ticker: str, db: AsyncSession):
-    result = await db.execute(
-        select(OrderModel)
-        .where(
-            and_(
-                OrderModel.ticker == ticker,
-                OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED])
-            )
-        )
-    )
-    return list(result.scalars().all())
-
-
-async def update_user_balance(
-        user_id: UUID,
-        ticker: str,
-        amount_change: int,
-        db: AsyncSession) -> BalanceModel:
-    db_balance = await check_balance_record(user_id, ticker, db)
-    if db_balance is None:
-        db_balance = BalanceModel(
-            user_id=user_id,
-            instrument_ticker=ticker,
-            amount=0
-        )
-        db.add(db_balance)
-
-    new_amount = db_balance.amount + amount_change
-
-    # Выдается и при слуаче нехватки баланса юзера, и при случае нехватки баланса другого трейдера
-    if new_amount < 0:
-        raise HTTPException(status_code=400, detail=f"Insufficient balance for {ticker}")
-
-    db_balance.amount = new_amount
-    db.add(db_balance)
-    return db_balance
 
 
 async def process_trade(
@@ -525,7 +504,6 @@ async def execute_market_order(market_order: OrderModel, db: AsyncSession):
 
         counterparty_ticker_balance = await check_balance_record(seller_id, ticker, db)
         counterparty_rub_balance = await check_balance_record(seller_id, ticker_rub, db)
-
         if counterparty_ticker_balance is None or (
             (is_buy and counterparty_ticker_balance.amount < trade_qty) or
             (not is_buy and counterparty_rub_balance.amount < trade_qty * trade_price)
@@ -547,7 +525,6 @@ async def execute_market_order(market_order: OrderModel, db: AsyncSession):
         raise HTTPException(status_code=400, detail="No matching orders in the orderbook")
     elif total_filled < market_order.qty:
         raise HTTPException(status_code=400, detail="Not enough liquidity to fill market order")
-
     market_order.status = OrderStatus.EXECUTED
     db.add(market_order)
     return market_order
@@ -587,14 +564,12 @@ async def execute_limit_order(limit_order: OrderModel, db: AsyncSession):
         if available_qty <= 0:
             continue
 
-        counterparty_id = match.user_id 
-
         trade_qty = min(remaining_qty, available_qty)
         trade_price = match.price
+        counterparty_id = match.user_id
 
         counterparty_ticker_balance = await check_balance_record(counterparty_id, ticker, db)
         counterparty_rub_balance = await check_balance_record(counterparty_id, ticker_rub, db)
-
         if counterparty_ticker_balance is None or (
                 (is_buy and counterparty_ticker_balance.amount < trade_qty) or
                 (not is_buy and counterparty_rub_balance.amount < trade_qty * trade_price)
@@ -610,9 +585,7 @@ async def execute_limit_order(limit_order: OrderModel, db: AsyncSession):
         if remaining_qty == 0:
             break
 
-    # Обновление исходной лимитной заявки
     limit_order.filled += total_filled
-
     if limit_order.filled == 0:
         limit_order.status = OrderStatus.NEW
     elif limit_order.filled < limit_order.qty:

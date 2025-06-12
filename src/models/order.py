@@ -1,6 +1,7 @@
 # src/models/order.py
-from sqlalchemy import Column, String, Integer, Enum as SqlEnum, DateTime
+from sqlalchemy import Column, String, Integer, ForeignKey, Enum as SqlEnum, DateTime
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
@@ -19,43 +20,14 @@ class OrderModel(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     status = Column(SqlEnum(OrderStatus), nullable=False, default=OrderStatus.NEW)
-    user_id = Column(UUID(as_uuid=True), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
     timestamp = Column(DateTime(timezone=True), nullable=False, default=datetime.now(timezone.utc))
-    
     direction = Column(SqlEnum(Direction), nullable=False)
-    ticker = Column(String, nullable=False)
+    ticker = Column(String, ForeignKey("instrument.ticker", ondelete="CASCADE"), nullable=False)
     qty = Column(Integer, nullable=False)
-    
     price = Column(Integer, nullable=True)
-    
     filled = Column(Integer, nullable=False, default=0)
 
     type = Column(SqlEnum(OrderType), nullable=False)
 
-    def to_limit_order_dict(self):
-        return {
-            "id": str(self.id),
-            "status": self.status,
-            "user_id": str(self.user_id),
-            "timestamp": self.timestamp.isoformat(),
-            "filled": self.filled,
-            "body": {
-                "direction": self.direction,
-                "ticker": self.ticker,
-                "qty": self.qty,
-                "price": self.price
-            }
-        }
-
-    def to_market_order_dict(self):
-        return {
-            "id": str(self.id),
-            "status": self.status,
-            "user_id": str(self.user_id),
-            "timestamp": self.timestamp.isoformat(),
-            "body": {
-                "direction": self.direction,
-                "ticker": self.ticker,
-                "qty": self.qty
-            }
-        }
+    instrument = relationship("InstrumentModel", backref="orders", passive_deletes=True)
