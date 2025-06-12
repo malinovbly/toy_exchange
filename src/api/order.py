@@ -188,13 +188,14 @@ async def cancel_order(
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     try:
-        api_key = get_api_key(authorization)
-        auth_user = await get_user_by_api_key(UUID(api_key), db)
+        api_key = UUID(get_api_key(authorization))
+        auth_user = await get_user_by_api_key(api_key, db)
         if auth_user is None:
             raise HTTPException(status_code=401, detail="Unauthorized")
 
         # Получаем ордер
-        db_order = await get_order_by_id(UUID(order_id), db)
+        order_id = UUID(order_id)
+        db_order = await get_order_by_id(order_id, db)
         if db_order is None:
             raise HTTPException(status_code=404, detail="Order Not Found")
 
@@ -219,9 +220,7 @@ async def cancel_order(
         # Отменяем ордер
         db_order.status = OrderStatus.CANCELLED
         await db.commit()
-        return Ok
+        return Ok()
 
-    except HTTPException as he:
-        raise he
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

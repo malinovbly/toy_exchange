@@ -80,7 +80,7 @@ async def add_instrument(
         api_key = get_api_key(authorization)
         if await check_user_is_admin(UUID(api_key), db):
             await create_instrument(instrument, db)
-        return Ok
+        return Ok()
 
     except Exception:
         raise HTTPException(status_code=401, detail="Unauthorized")
@@ -106,7 +106,7 @@ async def delete_instrument(
         if not is_admin:
             raise HTTPException(status_code=403, detail="Forbidden")
         await delete_instrument_by_ticker(ticker, db)
-        return Ok
+        return Ok()
 
     except Exception:
         raise HTTPException(status_code=401, detail="Unauthorized")
@@ -130,7 +130,7 @@ async def deposit(
         api_key = get_api_key(authorization)
         if await check_user_is_admin(UUID(api_key), db):
             await user_balance_deposit(request, db)
-        return Ok
+        return Ok()
 
     except Exception:
         raise HTTPException(status_code=401, detail="Unauthorized")
@@ -154,7 +154,7 @@ async def withdraw(
         api_key = get_api_key(authorization)
         if await check_user_is_admin(UUID(api_key), db):
             await user_balance_withdraw(request, db)
-        return Ok
+        return Ok()
 
     except Exception:
         raise HTTPException(status_code=401, detail="Unauthorized")
