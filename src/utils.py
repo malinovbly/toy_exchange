@@ -73,16 +73,15 @@ async def get_user_by_api_key(api_key: UUID, db: AsyncSession = Depends(get_db))
 
 async def check_user_is_admin(authorization: UUID = Depends(api_key_header), db: AsyncSession = Depends(get_db)):
     auth_user = await get_user_by_api_key(authorization, db)
-    if (auth_user is None) or not (auth_user.role == "ADMIN"):
+    if (auth_user is None) or (auth_user.role != "ADMIN"):
         raise HTTPException(status_code=403, detail="Forbidden")
     return True
 
 
 async def delete_user_by_id(user_id: UUID, db: AsyncSession = Depends(get_db)):
     db_user = await get_user_by_id(user_id, db)
-
     if db_user is None:
-        raise HTTPException(status_code=404, detail="Not Found")
+        raise HTTPException(status_code=404, detail="User Not Found")
 
     await db.delete(db_user)
     await db.commit()
@@ -91,15 +90,6 @@ async def delete_user_by_id(user_id: UUID, db: AsyncSession = Depends(get_db)):
 
 
 # instruments
-async def check_instrument(instrument: Instrument, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(InstrumentModel).filter_by(name=instrument.name))
-    db_instrument = result.scalar_one_or_none()
-    if db_instrument is None:
-        result = await db.execute(select(InstrumentModel).filter_by(ticker=instrument.ticker))
-        db_instrument = result.scalar_one_or_none()
-    return db_instrument
-
-
 async def get_all_instruments(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(InstrumentModel))
     return list(result.scalars().all())
@@ -108,6 +98,15 @@ async def get_all_instruments(db: AsyncSession = Depends(get_db)):
 async def get_instrument_by_ticker(ticker: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(InstrumentModel).filter_by(ticker=ticker))
     return result.scalar_one_or_none()
+
+
+async def check_instrument(instrument: Instrument, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(InstrumentModel).filter_by(name=instrument.name))
+    db_instrument = result.scalar_one_or_none()
+    if db_instrument is None:
+        result = await db.execute(select(InstrumentModel).filter_by(ticker=instrument.ticker))
+        db_instrument = result.scalar_one_or_none()
+    return db_instrument
 
 
 async def create_instrument(instrument: Instrument, db: AsyncSession = Depends(get_db)):
@@ -130,7 +129,7 @@ async def delete_instrument_by_ticker(ticker: str, db: AsyncSession = Depends(ge
 
     db_instrument = await get_instrument_by_ticker(ticker, db)
     if db_instrument is None:
-        raise HTTPException(status_code=404, detail=f"Ticker {ticker} Not Found")
+        raise HTTPException(status_code=404, detail=f"Ticker '{ticker}' Not Found")
 
     await db.execute(delete(BalanceModel).filter_by(instrument_ticker=ticker))
 
@@ -163,7 +162,7 @@ async def user_balance_deposit(request: Body_deposit_api_v1_admin_balance_deposi
     if await get_user_by_id(request.user_id, db) is None:
         raise HTTPException(status_code=404, detail="User Not Found")
     if await get_instrument_by_ticker(request.ticker, db) is None:
-        raise HTTPException(status_code=404, detail="Ticker Not Found")
+        raise HTTPException(status_code=404, detail=f"Ticker '{request.ticker}' Not Found")
 
     record = await check_balance_record(user_id=request.user_id, ticker=request.ticker, db=db)
     if record is not None:
@@ -196,7 +195,7 @@ async def user_balance_withdraw(request: Body_withdraw_api_v1_admin_balance_with
     if await get_user_by_id(request.user_id, db) is None:
         raise HTTPException(status_code=404, detail="User Not Found")
     if await get_instrument_by_ticker(request.ticker, db) is None:
-        raise HTTPException(status_code=404, detail="Ticker Not Found")
+        raise HTTPException(status_code=404, detail=f"Ticker '{request.ticker}' Not Found")
 
     record = await check_balance_record(user_id=request.user_id, ticker=request.ticker, db=db)
     if record is None:
@@ -224,15 +223,22 @@ async def get_available_balance(user_id: UUID, ticker: str, db: AsyncSession) ->
     rec = await check_balance_record(user_id, ticker, db)
     return 0 if rec is None else rec.amount - rec.reserved
 
+
 async def reserve_balance(user_id: UUID, ticker: str, delta: int, db: AsyncSession):
     rec = await check_balance_record(user_id, ticker, db)
     if rec is None:
-        raise HTTPException(status_code=400, detail="Hmmmm")
+        raise HTTPException(status_code=400, detail="No Balance Record")
+
+    if delta > 0 and rec.reserved + delta > rec.amount:
+        raise HTTPException(status_code=400, detail="Insufficient free balance")
+    if delta < 0 and rec.reserved + delta < 0:
+        raise HTTPException(status_code=400, detail="Can't de-reserve more than reserved")
+
     rec.reserved += delta
-    if rec.reserved < 0:
-        rec.reserved = 0
+
     await db.commit()
     await db.refresh(rec)
+
 
 # orderbook
 async def get_bids(ticker: str, limit: int, db: AsyncSession):
@@ -270,9 +276,12 @@ async def get_asks(ticker: str, limit: int, db: AsyncSession):
 
 
 def aggregate_orders(orders: List[OrderModel], is_bid: bool) -> List[Level]:
-    levels = {}
+    levels = dict()
     for order in orders:
-        remaining_qty = order.qty - order.filled
+        if order.type == "MARKET":
+            remaining_qty = order.qty
+        else:
+            remaining_qty = order.qty - order.filled
         if remaining_qty <= 0:
             continue
         levels[order.price] = levels.get(order.price, 0) + remaining_qty
@@ -296,19 +305,19 @@ async def get_transactions_by_ticker(ticker: str, limit: int, db: AsyncSession):
 
 
 async def record_transaction(ticker: str, price: int, qty: int, db: AsyncSession):
-    transaction = TransactionModel(
+    db_transaction = TransactionModel(
         ticker=ticker,
         price=price,
         qty=qty,
         timestamp=datetime.now(timezone.utc)
     )
-    db.add(transaction)
+    db.add(db_transaction)
     await db.commit()
 
 
 # orders
-async def create_order_in_db(order_data: Union[LimitOrderBody, MarketOrderBody], price: int, user_id: UUID,
-                             db: AsyncSession):
+async def create_order_in_db(order_data: Union[LimitOrderBody, MarketOrderBody],
+                             price: int, user_id: UUID, db: AsyncSession):
     order_dict = {
         "id": uuid4(),
         "status": OrderStatus.NEW,
@@ -469,7 +478,6 @@ async def process_trade(
         await update_user_balance(counterparty_id, ticker, trade_qty, db=db)
 
     await record_transaction(ticker, trade_price, trade_qty, db)
-
 
 
 async def update_order_status_and_filled(order: OrderModel, filled_increment: int, db: AsyncSession):

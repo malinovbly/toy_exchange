@@ -8,8 +8,6 @@ from src.database.database import Base
 class TransactionModel(Base):
     __tablename__ = "transactions"
 
-    # По идее, пока что id нигде не используется
-    # Добавила, просто чтобы консоль не ругалась
     id = Column(Integer, primary_key=True, index=True)
     ticker = Column(String, nullable=False)
     price = Column(Integer, nullable=False)

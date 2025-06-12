@@ -67,15 +67,15 @@ async def create_order(
         if instrument is None:
             raise HTTPException(
                 status_code=404,
-                detail=f"Ticker '{order_data.ticker}' not found in instruments"
+                detail=f"Ticker '{order_data.ticker}' Not Found"
             )
 
         # Проверка кол-ва тикера (если продаем)
         if order_data.direction == Direction.SELL:
             avail = await get_available_balance(user_id, order_data.ticker, db)
             if avail < order_data.qty:
-                raise HTTPException(400, f"Insufficient {order_data.ticker} balance for order.")
-            # резервируем 
+                raise HTTPException(status_code=400, detail=f"Insufficient '{order_data.ticker}' balance for order")
+            # Резервируем
             await reserve_balance(user_id, order_data.ticker, +order_data.qty, db)
 
         elif order_data.direction == Direction.BUY:
@@ -83,7 +83,7 @@ async def create_order(
                 cost = order_data.qty * order_data.price
                 avail_rub = await get_available_balance(user_id, "RUB", db)
                 if avail_rub < cost:
-                    raise HTTPException(400, "Insufficient RUB balance for order")
+                    raise HTTPException(status_code=400, detail="Insufficient 'RUB' balance for order")
                 await reserve_balance(user_id, "RUB", +cost, db)
 
         # Рыночная заявка
