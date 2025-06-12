@@ -284,10 +284,10 @@ async def get_bids(ticker: str, limit: int, db: AsyncSession):
                 OrderModel.ticker == ticker,
                 OrderModel.direction == Direction.BUY,
                 OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED]),
-                OrderModel.price is not None
+                OrderModel.price.isnot(None)
             )
         )
-        .order_by(asc(OrderModel.price))
+        .order_by(desc(OrderModel.price))
         .limit(limit)
     )
     return list(db_asks.scalars().all())
@@ -301,7 +301,7 @@ async def get_asks(ticker: str, limit: int, db: AsyncSession):
                 OrderModel.ticker == ticker,
                 OrderModel.direction == Direction.SELL,
                 OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED]),
-                OrderModel.price is not None
+                OrderModel.price.isnot(None)
             )
         )
         .order_by(asc(OrderModel.price))
