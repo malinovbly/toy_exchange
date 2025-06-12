@@ -288,6 +288,38 @@ async def update_user_balance(
     return db_balance
 
 
+async def lock_and_update_balance(changes: list[tuple[UUID, str, int]], db: AsyncSession):
+    ordered = sorted(changes, key=lambda x: (str(x[0]), x[1]))
+    updated = {}
+    for user_id, ticker, delta in ordered:
+        stmt = (
+            select(BalanceModel)
+            .where(
+                and_(
+                    BalanceModel.user_id == user_id,
+                    BalanceModel.instrument_ticker == ticker
+                )
+            )
+            .with_for_update()
+        )
+        result = await db.execute(stmt)
+        balance = result.scalars().first()
+
+        if balance is None:
+            balance = BalanceModel(user_id=user_id, instrument_ticker=ticker, amount=0)
+            db.add(balance)
+            await db.flush()
+
+        new_amount = balance.amount + delta
+        if new_amount < 0:
+            raise HTTPException(status_code=400, detail=f"Insufficient balance for {ticker} of user {user_id}")
+
+        balance.amount = new_amount
+        updated[(user_id, ticker)] = balance
+
+    return updated
+
+
 # orderbook
 async def get_bids(ticker: str, limit: int, db: AsyncSession):
     db_asks = await db.execute(
@@ -439,32 +471,51 @@ async def process_trade(
     trade_amount = trade_qty * trade_price
     ticker_rub = "RUB"
 
-    ordered_locks = sorted([
-        (user_id, ticker_rub if is_buy else ticker),
-        (user_id, ticker if is_buy else ticker_rub),
-        (counterparty_id, ticker if is_buy else ticker_rub),
-        (counterparty_id, ticker_rub if is_buy else ticker)
-    ])
-    await lock_balances(ordered_locks, db)
+    # ordered_locks = sorted([
+    #     (user_id, ticker_rub if is_buy else ticker),
+    #     (user_id, ticker if is_buy else ticker_rub),
+    #     (counterparty_id, ticker if is_buy else ticker_rub),
+    #     (counterparty_id, ticker_rub if is_buy else ticker)
+    # ])
+    # await lock_balances(ordered_locks, db)
+
+    # if is_buy:
+    #     # Снимаем резерв со стороны покупателя (RUB)
+    #     await reserve_balance(user_id, ticker_rub, -trade_amount, db)
+    #
+    #     await update_user_balance(user_id, ticker_rub, -trade_amount, db=db)
+    #     await update_user_balance(user_id, ticker, trade_qty, db=db)
+    #     await update_user_balance(counterparty_id, ticker, -trade_qty, db=db)
+    #     await update_user_balance(counterparty_id, ticker_rub, trade_amount, db=db)
+    #
+    # else:
+    #     # Снимаем резерв со стороны продавца (актив)
+    #     await reserve_balance(user_id, ticker, -trade_qty, db)
+    #
+    #     await update_user_balance(user_id, ticker, -trade_qty, db=db)
+    #     await update_user_balance(user_id, ticker_rub, trade_amount, db=db)
+    #     await update_user_balance(counterparty_id, ticker_rub, -trade_amount, db=db)
+    #     await update_user_balance(counterparty_id, ticker, trade_qty, db=db)
 
     if is_buy:
         # Снимаем резерв со стороны покупателя (RUB)
         await reserve_balance(user_id, ticker_rub, -trade_amount, db)
-
-        await update_user_balance(user_id, ticker_rub, -trade_amount, db=db)
-        await update_user_balance(user_id, ticker, trade_qty, db=db)
-        await update_user_balance(counterparty_id, ticker, -trade_qty, db=db)
-        await update_user_balance(counterparty_id, ticker_rub, trade_amount, db=db)
-
+        changes = [
+            (user_id, "RUB", -trade_amount),
+            (user_id, ticker, trade_qty),
+            (counterparty_id, ticker, -trade_qty),
+            (counterparty_id, "RUB", trade_amount),
+        ]
     else:
         # Снимаем резерв со стороны продавца (актив)
         await reserve_balance(user_id, ticker, -trade_qty, db)
-
-        await update_user_balance(user_id, ticker, -trade_qty, db=db)
-        await update_user_balance(user_id, ticker_rub, trade_amount, db=db)
-        await update_user_balance(counterparty_id, ticker_rub, -trade_amount, db=db)
-        await update_user_balance(counterparty_id, ticker, trade_qty, db=db)
-
+        changes = [
+            (user_id, ticker, -trade_qty),
+            (user_id, "RUB", trade_amount),
+            (counterparty_id, "RUB", -trade_amount),
+            (counterparty_id, ticker, trade_qty),
+        ]
+    await lock_and_update_balance(changes, db)
     await record_transaction(ticker, trade_price, trade_qty, db)
 
 
