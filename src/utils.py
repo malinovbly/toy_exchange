@@ -238,6 +238,20 @@ async def reserve_balance(user_id: UUID, ticker: str, delta: int, db: AsyncSessi
     db.add(rec)
 
 
+async def lock_balances(locks: list[tuple[UUID, str]], db: AsyncSession):
+    for uid, tkr in locks:
+        await db.execute(
+            select(BalanceModel)
+            .where(
+                and_(
+                    BalanceModel.user_id == uid,
+                    BalanceModel.instrument_ticker == tkr
+                )
+            )
+            .with_for_update()
+        )
+
+
 # orderbook
 async def get_bids(ticker: str, limit: int, db: AsyncSession):
     db_asks = await db.execute(
@@ -431,6 +445,14 @@ async def process_trade(
 ):
     trade_amount = trade_qty * trade_price
     ticker_rub = "RUB"
+
+    ordered_locks = sorted([
+        (user_id, ticker_rub if is_buy else ticker),
+        (user_id, ticker if is_buy else ticker_rub),
+        (counterparty_id, ticker if is_buy else ticker_rub),
+        (counterparty_id, ticker_rub if is_buy else ticker)
+    ])
+    await lock_balances(ordered_locks, db)
 
     if is_buy:
         # Снимаем резерв со стороны покупателя (RUB)
