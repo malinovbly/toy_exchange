@@ -66,10 +66,7 @@ async def get_orderbook(
 ):
     instrument = await get_instrument_by_ticker(ticker, db)
     if instrument is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Ticker '{ticker}' Not Found"
-        )
+        raise HTTPException(status_code=404, detail=f"Ticker '{ticker}' Not Found")
 
     bids = await get_bids(ticker, limit, db)
     asks = await get_asks(ticker, limit, db)
@@ -93,17 +90,11 @@ async def get_transaction_history(
 ):
     instrument = await get_instrument_by_ticker(ticker, db)
     if instrument is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Ticker {ticker} not found"
-        )
+        raise HTTPException(status_code=404, detail=f"Ticker {ticker} not found")
 
     transactions = await get_transactions_by_ticker(ticker, limit, db)
     if (transactions is None) or (len(transactions) == 0):
-        raise HTTPException(
-            status_code=404,
-            detail=f"No transactions found for ticker {ticker}"
-        )
+        raise HTTPException(status_code=404, detail=f"No transactions found for ticker {ticker}")
 
     return [
         Transaction(

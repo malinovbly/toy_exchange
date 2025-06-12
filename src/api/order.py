@@ -65,10 +65,7 @@ async def create_order(
         # Проверка существования тикера в базе
         instrument = await get_instrument_by_ticker(order_data.ticker, db)
         if instrument is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Ticker '{order_data.ticker}' Not Found"
-            )
+            raise HTTPException(status_code=404, detail=f"Ticker '{order_data.ticker}' Not Found")
 
         # Проверка кол-ва тикера (если продаем)
         if order_data.direction == Direction.SELL:
@@ -160,16 +157,14 @@ async def get_order(
         if auth_user is None:
             raise HTTPException(status_code=401, detail="Unauthorized")
 
-        user_id = auth_user.id
         order = await get_order_by_id(UUID(order_id), db)
 
         if order is None:
             raise HTTPException(status_code=404, detail="Order not found")
-        if order.user_id != user_id:
+        if order.user_id != auth_user.id:
             raise HTTPException(status_code=403, detail="Not authorized to access this order")
 
-        order_dict = create_order_dict(order)
-        return order_dict
+        return create_order_dict(order)
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -181,7 +176,7 @@ async def get_order(
     response_model=Ok,
     summary=summary_tags["cancel_order"]
 )
-async def delete_order_api(
+async def cancel_order(
         order_id: str,
         authorization: str = Depends(api_key_header),
         db: AsyncSession = Depends(get_db)
@@ -198,10 +193,10 @@ async def delete_order_api(
         # Получаем ордер
         db_order = await get_order_by_id(UUID(order_id), db)
         if db_order is None:
-            raise HTTPException(status_code=404, detail="Order not found")
+            raise HTTPException(status_code=404, detail="Order Not Found")
 
         if db_order.status in [OrderStatus.EXECUTED, OrderStatus.CANCELLED]:
-            raise HTTPException(status_code=400, detail="Order already executed or cancelled")
+            raise HTTPException(status_code=400, detail=f"Order Already {db_order.status}")
 
         # Разморозка оставшегося объема
         unfilled_qty = db_order.qty - db_order.filled
@@ -224,7 +219,7 @@ async def delete_order_api(
 
         return Ok
 
-    except HTTPException:
-        raise
+    except HTTPException as he:
+        raise he
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

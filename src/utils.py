@@ -400,23 +400,6 @@ async def get_active_orders_by_ticker(ticker: str, db: AsyncSession):
     return list(result.scalars().all())
 
 
-async def cancel_order(order_id: UUID, db: AsyncSession):
-    db_order = await get_order_by_id(order_id, db)
-    if db_order is None:
-        raise HTTPException(status_code=404, detail="Order Not Found")
-
-    if db_order.status not in [OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED]:
-        raise HTTPException(
-            status_code=400,
-            detail="Only NEW or PARTIALLY_EXECUTED orders can be cancelled"
-        )
-
-    db_order.status = OrderStatus.CANCELLED
-
-    await db.commit()
-    await db.refresh(db_order)
-
-
 async def update_user_balance(
         user_id: UUID,
         ticker: str,
