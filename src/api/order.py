@@ -98,7 +98,7 @@ async def create_order(
     except HTTPException as he:
         raise he
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=f"??? {str(e)}")
 
 
 @router.get(
@@ -134,7 +134,7 @@ async def list_orders(
         return result
 
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=f"!!! {str(e)}")
 
 
 @router.get(
