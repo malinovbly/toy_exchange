@@ -257,7 +257,19 @@ async def update_user_balance(
         ticker: str,
         amount_change: int,
         db: AsyncSession) -> BalanceModel:
-    db_balance = await check_balance_record(user_id, ticker, db)
+    stmt = (
+        select(BalanceModel)
+        .where(
+            and_(
+                BalanceModel.user_id == user_id,
+                BalanceModel.instrument_ticker == ticker
+            )
+        )
+        .with_for_update()
+    )
+    result = await db.execute(stmt)
+    db_balance = result.scalars().first()
+
     if db_balance is None:
         db_balance = BalanceModel(
             user_id=user_id,
@@ -265,6 +277,7 @@ async def update_user_balance(
             amount=0
         )
         db.add(db_balance)
+        await db.flush()
 
     new_amount = db_balance.amount + amount_change
     if new_amount < 0:
