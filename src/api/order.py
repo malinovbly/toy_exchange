@@ -4,6 +4,7 @@ from typing import List, Union
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.logger import logger
 from src.database.database import get_db
 from src.models.order import OrderStatus
 from src.security import api_key_header
@@ -90,9 +91,11 @@ async def create_order(
         return CreateOrderResponse(order_id=executed_order.id)
 
     except HTTPException:
+        logger.exception("!!!")
         await db.rollback()
         raise
     except Exception as e:
+        logger.exception("!!!")
         await db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
 
