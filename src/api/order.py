@@ -100,6 +100,7 @@ async def create_order(
         return CreateOrderResponse(order_id=executed_order.id)
 
     except HTTPException:
+        logger.exception("Unexpected error during order creation")
         await db.rollback()
         raise
     except Exception as e:
