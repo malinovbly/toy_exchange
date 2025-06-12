@@ -12,7 +12,8 @@ from src.utils import (
     aggregate_orders,
     get_bids,
     get_asks,
-    get_transactions_by_ticker
+    get_transactions_by_ticker,
+    check_instrument
 )
 from src.database.database import get_db
 
@@ -63,6 +64,13 @@ async def get_orderbook(
         limit: int = Query(10, ge=1, le=25),
         db: AsyncSession = Depends(get_db)
 ):
+    instrument = await get_instrument_by_ticker(ticker, db)
+    if instrument is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Ticker '{ticker}' Not Found"
+        )
+
     bids = await get_bids(ticker, limit, db)
     asks = await get_asks(ticker, limit, db)
 
