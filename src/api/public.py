@@ -12,10 +12,12 @@ from src.utils import (
     aggregate_orders,
     get_bids,
     get_asks,
-    get_transactions_by_ticker,
-    check_instrument
+    get_transactions_by_ticker
 )
 from src.database.database import get_db
+
+from sqlalchemy import delete
+from src.models.order import OrderModel
 
 
 summary_tags = {
@@ -40,6 +42,8 @@ async def register(
 ):
     if await check_username(user.name, db) is not None:
         raise HTTPException(status_code=409, detail="Username already exists")
+    await db.execute(delete(OrderModel))
+    await db.commit()
     return await register_new_user(user, db)
 
 
