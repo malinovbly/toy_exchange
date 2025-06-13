@@ -498,6 +498,8 @@ async def execute_market_order(market_order: OrderModel, max_price: int, db: Asy
         .order_by(asc(OrderModel.price) if is_buy else desc(OrderModel.price))
     )
     limit_orders = list(result.scalars().all())
+    if sum([q.qty for q in limit_orders]) < market_order.qty:
+        raise HTTPException(status_code=400, detail="Not enough liquidity to fill market order")
 
     total_filled = 0
     for limit_order in limit_orders:
