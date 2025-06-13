@@ -538,8 +538,6 @@ async def execute_market_order(market_order: OrderModel, max_price: int, db: Asy
         db.add(market_order)
         await db.commit()
         raise HTTPException(status_code=400, detail="No matching orders in the orderbook")
-    elif total_filled < market_order.qty:
-        raise HTTPException(status_code=400, detail="Not enough liquidity to fill market order")
     market_order.status = OrderStatus.EXECUTED
     db.add(market_order)
     return market_order
