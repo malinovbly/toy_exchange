@@ -1,6 +1,5 @@
 # src/models/transaction.py
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
-from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 
 from src.database.database import Base
@@ -14,5 +13,3 @@ class TransactionModel(Base):
     price = Column(Integer, nullable=False)
     qty = Column(Integer, nullable=False)
     timestamp = Column(DateTime(timezone=True), nullable=False, default=datetime.now(timezone.utc))
-
-    instrument = relationship("InstrumentModel", backref="transactions", passive_deletes=True)
