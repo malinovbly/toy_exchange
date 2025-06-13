@@ -465,145 +465,14 @@ async def update_order_status_and_filled(order: OrderModel, filled_increment: in
     db.add(order)
 
 
-# async def execute_market_order(market_order: OrderModel, max_price: int, db: AsyncSession):
-#     remaining_qty = market_order.qty
-#     ticker = market_order.ticker
-#     direction = market_order.direction
-#     user_id = market_order.user_id
-#
-#     is_buy = direction == Direction.BUY
-#     opposite_direction = Direction.SELL if is_buy else Direction.BUY
-#     ticker_rub = "RUB"
-#
-#     result = await db.execute(
-#         select(OrderModel)
-#         .where(
-#             and_(
-#                 OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED]),
-#                 OrderModel.direction == opposite_direction,
-#                 OrderModel.ticker == ticker,
-#                 OrderModel.price.isnot(None)
-#             )
-#         )
-#         .order_by(asc(OrderModel.price) if is_buy else desc(OrderModel.price))
-#     )
-#     limit_orders = list(result.scalars().all())
-#     if sum([q.qty for q in limit_orders]) < market_order.qty:
-#         raise HTTPException(status_code=400, detail="Not enough liquidity to fill market order")
-#
-#     total_filled = 0
-#     for limit_order in limit_orders:
-#         available_qty = limit_order.qty - limit_order.filled
-#         if available_qty <= 0:
-#             continue
-#
-#         trade_qty = min(remaining_qty, available_qty)
-#         trade_price = limit_order.price
-#         seller_id = limit_order.user_id
-#
-#         counterparty_ticker_balance = await check_balance_record(seller_id, ticker, db)
-#         counterparty_rub_balance = await check_balance_record(seller_id, ticker_rub, db)
-#         if counterparty_ticker_balance is None or (
-#             (is_buy and counterparty_ticker_balance.amount < trade_qty) or
-#             (not is_buy and counterparty_rub_balance.amount < trade_qty * trade_price)
-#         ):
-#             continue
-#
-#         await process_trade(is_buy, user_id, seller_id, ticker, trade_qty, trade_price, db)
-#         await update_order_status_and_filled(limit_order, trade_qty, db)
-#
-#         remaining_qty -= trade_qty
-#         total_filled += trade_qty
-#
-#         if remaining_qty == 0:
-#             break
-#
-#     if total_filled == 0:
-#         market_order.status = OrderStatus.CANCELLED
-#         if market_order.direction == Direction.SELL:
-#             await reserve_balance(market_order.user_id, market_order.ticker, -market_order.qty, db)
-#         elif market_order.direction == Direction.BUY:
-#             cost = market_order.qty * max_price
-#             await reserve_balance(market_order.user_id, "RUB", -cost, db)
-#         db.add(market_order)
-#         await db.commit()
-#         raise HTTPException(status_code=400, detail="No matching orders in the orderbook")
-#     market_order.status = OrderStatus.EXECUTED
-#     db.add(market_order)
-#     return market_order
-
-
-async def execute_market_sell_order(market_order: OrderModel, db: AsyncSession):
+async def execute_market_order(market_order: OrderModel, max_price: int, db: AsyncSession):
     remaining_qty = market_order.qty
     ticker = market_order.ticker
+    direction = market_order.direction
     user_id = market_order.user_id
 
-    result = await db.execute(
-        select(OrderModel)
-        .where(
-            and_(
-                OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED]),
-                OrderModel.direction == Direction.BUY,
-                OrderModel.ticker == ticker,
-                OrderModel.price.isnot(None)
-            )
-        )
-        .order_by(desc(OrderModel.price))
-    )
-    limit_orders = list(result.scalars().all())
-    if sum([order.qty - order.filled for order in limit_orders]) < remaining_qty:
-        raise HTTPException(status_code=400, detail="Not enough liquidity to fill market sell order")
-
-    total_filled = 0
-    for limit_order in limit_orders:
-        available_qty = limit_order.qty - limit_order.filled
-        if available_qty <= 0:
-            continue
-        trade_qty = min(remaining_qty, available_qty)
-        trade_price = limit_order.price
-        buyer_id = limit_order.user_id
-        seller_balance = await check_balance_record(user_id, ticker, db)
-        if seller_balance is None or seller_balance.amount < trade_qty:
-            continue
-        buyer_rub_balance = await check_balance_record(buyer_id, "RUB", db)
-        total_cost = trade_qty * trade_price
-        if buyer_rub_balance is None or buyer_rub_balance.amount < total_cost:
-            continue
-
-        await process_trade(
-            is_buy=False,
-            user_id=user_id,
-            counterparty_id=buyer_id,
-            ticker=ticker,
-            trade_qty=trade_qty,
-            trade_price=trade_price,
-            db=db
-        )
-        await update_order_status_and_filled(limit_order, trade_qty, db)
-        remaining_qty -= trade_qty
-        total_filled += trade_qty
-        if remaining_qty == 0:
-            break
-
-    if total_filled == 0:
-        market_order.status = OrderStatus.CANCELLED
-        await reserve_balance(user_id, ticker, -market_order.qty, db)
-        db.add(market_order)
-        await db.commit()
-        raise HTTPException(status_code=400, detail="No matching orders in the orderbook to sell")
-
-    market_order.status = OrderStatus.EXECUTED
-    db.add(market_order)
-    return market_order
-
-
-async def execute_market_buy_order(market_order: OrderModel, db: AsyncSession):
-    if (market_order.type != "MARKET") or (market_order.direction != Direction.BUY):
-        raise HTTPException(status_code=400, detail="Order Must Be 'BUY' and 'MARKET'")
-
-    remaining_qty = market_order.qty
-    ticker = market_order.ticker
-    user_id = market_order.user_id
+    is_buy = direction == Direction.BUY
+    opposite_direction = Direction.SELL if is_buy else Direction.BUY
     ticker_rub = "RUB"
 
     result = await db.execute(
@@ -611,95 +480,226 @@ async def execute_market_buy_order(market_order: OrderModel, db: AsyncSession):
         .where(
             and_(
                 OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED]),
-                OrderModel.direction == Direction.SELL,
+                OrderModel.direction == opposite_direction,
                 OrderModel.ticker == ticker,
                 OrderModel.price.isnot(None)
             )
         )
-        .order_by(OrderModel.price.asc(), OrderModel.timestamp.asc())
-        .with_for_update()
+        .order_by(asc(OrderModel.price) if is_buy else desc(OrderModel.price))
     )
-    sell_orders = list(result.scalars().all())
-    if not sell_orders:
-        raise HTTPException(status_code=400, detail="No sell orders available")
-
-    total_rub_required = 0
-    temp_remaining = remaining_qty
-    for order in sell_orders:
-        available = order.qty - order.filled
-        if available <= 0:
-            continue
-        match_qty = min(available, temp_remaining)
-        total_rub_required += match_qty * order.price
-        temp_remaining -= match_qty
-        if temp_remaining <= 0:
-            break
-
-    if temp_remaining > 0:
+    limit_orders = list(result.scalars().all())
+    if sum([q.qty for q in limit_orders]) < market_order.qty:
         raise HTTPException(status_code=400, detail="Not enough liquidity to fill market order")
 
-    rub_balance = await check_balance_record(user_id, ticker_rub, db)
-    if not rub_balance or rub_balance.amount < total_rub_required:
-        raise HTTPException(status_code=400, detail="Not enough RUB")
-    rub_balance.amount -= total_rub_required
-    rub_balance.reserved += total_rub_required
-    db.add(rub_balance)
-    await db.flush()
-
     total_filled = 0
-    rub_spent = 0
-    for limit_order in sell_orders:
+    for limit_order in limit_orders:
         available_qty = limit_order.qty - limit_order.filled
         if available_qty <= 0:
             continue
 
         trade_qty = min(remaining_qty, available_qty)
         trade_price = limit_order.price
-        trade_cost = trade_qty * trade_price
         seller_id = limit_order.user_id
 
-        counterparty_balance = await check_balance_record(seller_id, ticker, db)
-        if not counterparty_balance or counterparty_balance.amount < trade_qty:
+        counterparty_ticker_balance = await check_balance_record(seller_id, ticker, db)
+        counterparty_rub_balance = await check_balance_record(seller_id, ticker_rub, db)
+        if counterparty_ticker_balance is None or (
+            (is_buy and counterparty_ticker_balance.amount < trade_qty) or
+            (not is_buy and counterparty_rub_balance.amount < trade_qty * trade_price)
+        ):
             continue
 
-        await process_trade(
-            is_buy=True,
-            user_id=user_id,
-            counterparty_id=seller_id,
-            ticker=ticker,
-            trade_qty=trade_qty,
-            trade_price=trade_price,
-            db=db
-        )
+        await process_trade(is_buy, user_id, seller_id, ticker, trade_qty, trade_price, db)
         await update_order_status_and_filled(limit_order, trade_qty, db)
 
         remaining_qty -= trade_qty
-        rub_spent += trade_cost
         total_filled += trade_qty
 
         if remaining_qty == 0:
             break
 
     if total_filled == 0:
-        rub_balance.amount += total_rub_required
-        rub_balance.reserved -= total_rub_required
         market_order.status = OrderStatus.CANCELLED
-        db.add_all([rub_balance, market_order])
+        if market_order.direction == Direction.SELL:
+            await reserve_balance(market_order.user_id, market_order.ticker, -market_order.qty, db)
+        elif market_order.direction == Direction.BUY:
+            cost = market_order.qty * max_price
+            await reserve_balance(market_order.user_id, "RUB", -cost, db)
+        db.add(market_order)
         await db.commit()
-        raise HTTPException(status_code=400, detail="No matching orders were executed")
-
+        raise HTTPException(status_code=400, detail="No matching orders in the orderbook")
     market_order.status = OrderStatus.EXECUTED
-    market_order.filled = total_filled
     db.add(market_order)
-
-    if rub_spent < total_rub_required:
-        refund = total_rub_required - rub_spent
-        rub_balance.amount += refund
-        rub_balance.reserved -= refund
-        db.add(rub_balance)
-
-    await db.commit()
     return market_order
+
+
+# async def execute_market_sell_order(market_order: OrderModel, db: AsyncSession):
+#     remaining_qty = market_order.qty
+#     ticker = market_order.ticker
+#     user_id = market_order.user_id
+#
+#     result = await db.execute(
+#         select(OrderModel)
+#         .where(
+#             and_(
+#                 OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED]),
+#                 OrderModel.direction == Direction.BUY,
+#                 OrderModel.ticker == ticker,
+#                 OrderModel.price.isnot(None)
+#             )
+#         )
+#         .order_by(desc(OrderModel.price))
+#     )
+#     limit_orders = list(result.scalars().all())
+#     if sum([order.qty - order.filled for order in limit_orders]) < remaining_qty:
+#         raise HTTPException(status_code=400, detail="Not enough liquidity to fill market sell order")
+#
+#     total_filled = 0
+#     for limit_order in limit_orders:
+#         available_qty = limit_order.qty - limit_order.filled
+#         if available_qty <= 0:
+#             continue
+#         trade_qty = min(remaining_qty, available_qty)
+#         trade_price = limit_order.price
+#         buyer_id = limit_order.user_id
+#         seller_balance = await check_balance_record(user_id, ticker, db)
+#         if seller_balance is None or seller_balance.amount < trade_qty:
+#             continue
+#         buyer_rub_balance = await check_balance_record(buyer_id, "RUB", db)
+#         total_cost = trade_qty * trade_price
+#         if buyer_rub_balance is None or buyer_rub_balance.amount < total_cost:
+#             continue
+#
+#         await process_trade(
+#             is_buy=False,
+#             user_id=user_id,
+#             counterparty_id=buyer_id,
+#             ticker=ticker,
+#             trade_qty=trade_qty,
+#             trade_price=trade_price,
+#             db=db
+#         )
+#         await update_order_status_and_filled(limit_order, trade_qty, db)
+#         remaining_qty -= trade_qty
+#         total_filled += trade_qty
+#         if remaining_qty == 0:
+#             break
+#
+#     if total_filled == 0:
+#         market_order.status = OrderStatus.CANCELLED
+#         await reserve_balance(user_id, ticker, -market_order.qty, db)
+#         db.add(market_order)
+#         await db.commit()
+#         raise HTTPException(status_code=400, detail="No matching orders in the orderbook to sell")
+#
+#     market_order.status = OrderStatus.EXECUTED
+#     db.add(market_order)
+#     return market_order
+#
+#
+# async def execute_market_buy_order(market_order: OrderModel, db: AsyncSession):
+#     if (market_order.type != "MARKET") or (market_order.direction != Direction.BUY):
+#         raise HTTPException(status_code=400, detail="Order Must Be 'BUY' and 'MARKET'")
+#
+#     remaining_qty = market_order.qty
+#     ticker = market_order.ticker
+#     user_id = market_order.user_id
+#     ticker_rub = "RUB"
+#
+#     result = await db.execute(
+#         select(OrderModel)
+#         .where(
+#             and_(
+#                 OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED]),
+#                 OrderModel.direction == Direction.SELL,
+#                 OrderModel.ticker == ticker,
+#                 OrderModel.price.isnot(None)
+#             )
+#         )
+#         .order_by(OrderModel.price.asc(), OrderModel.timestamp.asc())
+#         .with_for_update()
+#     )
+#     sell_orders = list(result.scalars().all())
+#     if not sell_orders:
+#         raise HTTPException(status_code=400, detail="No sell orders available")
+#
+#     total_rub_required = 0
+#     temp_remaining = remaining_qty
+#     for order in sell_orders:
+#         available = order.qty - order.filled
+#         if available <= 0:
+#             continue
+#         match_qty = min(available, temp_remaining)
+#         total_rub_required += match_qty * order.price
+#         temp_remaining -= match_qty
+#         if temp_remaining <= 0:
+#             break
+#
+#     if temp_remaining > 0:
+#         raise HTTPException(status_code=400, detail="Not enough liquidity to fill market order")
+#
+#     rub_balance = await check_balance_record(user_id, ticker_rub, db)
+#     if (rub_balance is None) or (rub_balance.amount < total_rub_required):
+#         raise HTTPException(status_code=400, detail="Not enough RUB")
+#     rub_balance.amount -= total_rub_required
+#     rub_balance.reserved += total_rub_required
+#     db.add(rub_balance)
+#     await db.flush()
+#
+#     total_filled = 0
+#     rub_spent = 0
+#     for limit_order in sell_orders:
+#         available_qty = limit_order.qty - limit_order.filled
+#         if available_qty <= 0:
+#             continue
+#
+#         trade_qty = min(remaining_qty, available_qty)
+#         trade_price = limit_order.price
+#         trade_cost = trade_qty * trade_price
+#         seller_id = limit_order.user_id
+#
+#         counterparty_balance = await check_balance_record(seller_id, ticker, db)
+#         if not counterparty_balance or counterparty_balance.amount < trade_qty:
+#             continue
+#
+#         await process_trade(
+#             is_buy=True,
+#             user_id=user_id,
+#             counterparty_id=seller_id,
+#             ticker=ticker,
+#             trade_qty=trade_qty,
+#             trade_price=trade_price,
+#             db=db
+#         )
+#         await update_order_status_and_filled(limit_order, trade_qty, db)
+#
+#         remaining_qty -= trade_qty
+#         rub_spent += trade_cost
+#         total_filled += trade_qty
+#
+#         if remaining_qty == 0:
+#             break
+#
+#     if total_filled == 0:
+#         rub_balance.amount += total_rub_required
+#         rub_balance.reserved -= total_rub_required
+#         market_order.status = OrderStatus.CANCELLED
+#         db.add_all([rub_balance, market_order])
+#         await db.commit()
+#         raise HTTPException(status_code=400, detail="No matching orders were executed")
+#
+#     market_order.status = OrderStatus.EXECUTED
+#     market_order.filled = total_filled
+#     db.add(market_order)
+#
+#     if rub_spent < total_rub_required:
+#         refund = total_rub_required - rub_spent
+#         rub_balance.amount += refund
+#         rub_balance.reserved -= refund
+#         db.add(rub_balance)
+#
+#     await db.commit()
+#     return market_order
 
 
 async def execute_limit_order(limit_order: OrderModel, db: AsyncSession):

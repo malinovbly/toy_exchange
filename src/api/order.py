@@ -22,8 +22,10 @@ from src.utils import (
     get_user_by_api_key,
     get_orders_by_user,
     get_instrument_by_ticker,
-    execute_market_sell_order,
-    execute_market_buy_order,
+    get_max_price_for_market_rub_reserve,
+    # execute_market_sell_order,
+    # execute_market_buy_order,
+    execute_market_order,
     execute_limit_order,
     get_api_key,
     create_order_dict,
@@ -68,7 +70,7 @@ async def create_order(
             raise HTTPException(status_code=404, detail=f"Ticker '{order_data.ticker}' Not Found")
 
         user_id = auth_user.id
-        # max_price = None
+        max_price = None
 
         if order_data.direction == Direction.SELL:
             avail = await get_available_balance(user_id, order_data.ticker, db)
@@ -83,23 +85,23 @@ async def create_order(
                 raise HTTPException(status_code=400, detail="Insufficient 'RUB' balance for order")
             await reserve_balance(user_id, "RUB", cost, db)
 
-        # elif (order_data.direction == Direction.BUY) and (isinstance(order_data, MarketOrderBody)):
-        #     max_price = await get_max_price_for_market_rub_reserve(order_data.ticker, db)
-        #     if max_price is None:
-        #         raise HTTPException(status_code=400, detail="No liquidity to estimate market order cost")
-        #     cost = order_data.qty * max_price
-        #     avail_rub = await get_available_balance(user_id, "RUB", db)
-        #     if avail_rub < cost:
-        #         raise HTTPException(status_code=400, detail="Insufficient 'RUB' balance for order")
-        #     await reserve_balance(user_id, "RUB", cost, db)
+        elif (order_data.direction == Direction.BUY) and (isinstance(order_data, MarketOrderBody)):
+            max_price = await get_max_price_for_market_rub_reserve(order_data.ticker, db)
+            if max_price is None:
+                raise HTTPException(status_code=400, detail="No liquidity to estimate market order cost")
+            cost = order_data.qty * max_price
+            avail_rub = await get_available_balance(user_id, "RUB", db)
+            if avail_rub < cost:
+                raise HTTPException(status_code=400, detail="Insufficient 'RUB' balance for order")
+            await reserve_balance(user_id, "RUB", cost, db)
 
         if isinstance(order_data, MarketOrderBody):
-            # executed_order = await execute_market_order(db_order, max_price, db=db)
             db_order = await create_order_in_db(order_data=order_data, price=None, user_id=user_id, db=db)
-            if order_data.direction == Direction.SELL:
-                executed_order = await execute_market_sell_order(db_order, db)
-            else:
-                executed_order = await execute_market_buy_order(db_order, db)
+            executed_order = await execute_market_order(db_order, max_price, db=db)
+            # if order_data.direction == Direction.SELL:
+            #     executed_order = await execute_market_sell_order(db_order, db)
+            # else:
+            #     executed_order = await execute_market_buy_order(db_order, db)
         else:
             db_order = await create_order_in_db(order_data=order_data, price=order_data.price, user_id=user_id, db=db)
             executed_order = await execute_limit_order(db_order, db=db)
