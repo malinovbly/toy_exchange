@@ -15,7 +15,6 @@ from src.schemas.schemas import (
     MarketOrder,
     CreateOrderResponse,
     Direction,
-    UserRole,
     Ok
 )
 from src.utils import (
@@ -29,7 +28,8 @@ from src.utils import (
     get_api_key,
     create_order_dict,
     get_available_balance,
-    reserve_balance
+    reserve_balance,
+    get_max_price_for_market_rub_reserve
 )
 
 summary_tags = {
@@ -72,8 +72,17 @@ async def create_order(
             if avail < order_data.qty:
                 raise HTTPException(status_code=400, detail=f"Insufficient '{order_data.ticker}' balance for order")
             await reserve_balance(user_id, order_data.ticker, +order_data.qty, db)
+
         elif (order_data.direction == Direction.BUY) and (isinstance(order_data, LimitOrderBody)):
             cost = order_data.qty * order_data.price
+            avail_rub = await get_available_balance(user_id, "RUB", db)
+            if avail_rub < cost:
+                raise HTTPException(status_code=400, detail="Insufficient 'RUB' balance for order")
+            await reserve_balance(user_id, "RUB", +cost, db)
+
+        elif (order_data.direction == Direction.BUY) and (isinstance(order_data, MarketOrderBody)):
+            max_price = await get_max_price_for_market_rub_reserve(order_data.ticker, db)
+            cost = order_data.qty * max_price
             avail_rub = await get_available_balance(user_id, "RUB", db)
             if avail_rub < cost:
                 raise HTTPException(status_code=400, detail="Insufficient 'RUB' balance for order")
