@@ -30,4 +30,5 @@ class OrderModel(Base):
 
     type = Column(SqlEnum(OrderType), nullable=False)
 
+    user = relationship("UserModel", backref="orders", passive_deletes=True)
     instrument = relationship("InstrumentModel", backref="orders", passive_deletes=True)

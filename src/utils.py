@@ -366,6 +366,8 @@ async def get_transactions_by_ticker(ticker: str, limit: int, db: AsyncSession):
 
 
 async def record_transaction(ticker: str, price: int, qty: int, db: AsyncSession):
+    if ticker is None:
+        raise HTTPException(status_code=400, detail="Ticker must be provided")
     db_transaction = TransactionModel(
         ticker=ticker,
         price=price,
