@@ -10,10 +10,9 @@ from src.schemas.schemas import (
     Instrument,
     Ok,
     Body_deposit_api_v1_admin_balance_deposit_post,
-    Body_withdraw_api_v1_admin_balance_withdraw_post
+    Body_withdraw_api_v1_admin_balance_withdraw_post,
 )
 from src.utils import (
-    get_user_by_api_key,
     check_user_is_admin,
     delete_user_by_id,
     create_instrument,
@@ -53,12 +52,8 @@ async def delete_user(
 
     try:
         api_key = get_api_key(authorization)
-        auth_user = await get_user_by_api_key(UUID(api_key), db)
-        if auth_user is None:
-            raise HTTPException(status_code=401, detail="Unauthorized")
-        if auth_user.role == "ADMIN":
+        if await check_user_is_admin(UUID(api_key), db):
             return await delete_user_by_id(UUID(user_id), db)
-        raise HTTPException(status_code=403, detail="Forbidden")
 
     except Exception:
         raise HTTPException(status_code=401, detail="Unauthorized")
@@ -104,11 +99,9 @@ async def delete_instrument(
 
     try:
         api_key = get_api_key(authorization)
-        is_admin = await check_user_is_admin(UUID(api_key), db)
-        if not is_admin:
-            raise HTTPException(status_code=403, detail="Forbidden")
-        await delete_instrument_by_ticker(ticker, db)
-        return Ok()
+        if await check_user_is_admin(UUID(api_key), db):
+            await delete_instrument_by_ticker(ticker, db)
+            return Ok()
 
     except Exception:
         logger.exception("DELETE INSTRUMENT ERROR")
@@ -133,7 +126,7 @@ async def deposit(
         api_key = get_api_key(authorization)
         if await check_user_is_admin(UUID(api_key), db):
             await user_balance_deposit(request, db)
-        return Ok()
+            return Ok()
 
     except Exception:
         raise HTTPException(status_code=401, detail="Unauthorized")
@@ -157,7 +150,7 @@ async def withdraw(
         api_key = get_api_key(authorization)
         if await check_user_is_admin(UUID(api_key), db):
             await user_balance_withdraw(request, db)
-        return Ok()
+            return Ok()
 
     except Exception:
         raise HTTPException(status_code=401, detail="Unauthorized")

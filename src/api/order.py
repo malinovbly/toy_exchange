@@ -4,7 +4,6 @@ from typing import List, Union
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.logger import logger
 from src.database.database import get_db
 from src.models.order import OrderStatus
 from src.security import api_key_header
@@ -55,6 +54,8 @@ async def create_order(
 ):
     if not authorization:
         raise HTTPException(status_code=401, detail="Unauthorized")
+    if not order_data.ticker:
+        raise HTTPException(400, detail="Ticker must be provided for order")
 
     try:
         api_key = get_api_key(authorization)
@@ -131,8 +132,6 @@ async def list_orders(
             raise HTTPException(status_code=401, detail="Unauthorized")
 
         orders = await get_orders_by_user(auth_user.id, db)
-        if len(orders) == 0:
-            return []
         return [create_order_dict(order) for order in orders]
 
     except Exception as e:
