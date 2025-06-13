@@ -593,7 +593,7 @@ async def execute_limit_order(limit_order: OrderModel, db: AsyncSession):
         remaining_qty -= trade_qty
         total_filled += trade_qty
 
-        if remaining_qty == 0:
+        if remaining_qty <= 0:
             break
 
     limit_order.filled += total_filled

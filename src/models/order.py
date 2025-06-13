@@ -18,7 +18,7 @@ class OrderType(str, Enum):
 class OrderModel(Base):
     __tablename__ = "orders"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(UUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
     status = Column(SqlEnum(OrderStatus), nullable=False, default=OrderStatus.NEW)
     user_id = Column(UUID(as_uuid=True), ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
     timestamp = Column(DateTime(timezone=True), nullable=False, default=datetime.now(timezone.utc))
