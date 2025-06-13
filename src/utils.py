@@ -285,8 +285,6 @@ async def get_max_price_for_market_rub_reserve(ticker: str, db: AsyncSession):
         .limit(1)
     )
     max_price = result.scalar_one_or_none()
-    if max_price is None:
-        raise HTTPException(status_code=400, detail="No liquidity to estimate market order cost")
     return max_price
 
 
@@ -476,7 +474,7 @@ async def update_order_status_and_filled(order: OrderModel, filled_increment: in
     db.add(order)
 
 
-async def execute_market_order(market_order: OrderModel, db: AsyncSession):
+async def execute_market_order(market_order: OrderModel, max_price: int, db: AsyncSession):
     remaining_qty = market_order.qty
     ticker = market_order.ticker
     direction = market_order.direction
@@ -532,7 +530,6 @@ async def execute_market_order(market_order: OrderModel, db: AsyncSession):
         if market_order.direction == Direction.SELL:
             await reserve_balance(market_order.user_id, market_order.ticker, -market_order.qty, db)
         elif market_order.direction == Direction.BUY:
-            max_price = await get_max_price_for_market_rub_reserve(market_order.ticker, db)
             cost = market_order.qty * max_price
             await reserve_balance(market_order.user_id, "RUB", -cost, db)
         db.add(market_order)

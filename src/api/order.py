@@ -67,30 +67,34 @@ async def create_order(
             raise HTTPException(status_code=404, detail=f"Ticker '{order_data.ticker}' Not Found")
 
         user_id = auth_user.id
+        max_price = None
+
         if order_data.direction == Direction.SELL:
             avail = await get_available_balance(user_id, order_data.ticker, db)
             if avail < order_data.qty:
                 raise HTTPException(status_code=400, detail=f"Insufficient '{order_data.ticker}' balance for order")
-            await reserve_balance(user_id, order_data.ticker, +order_data.qty, db)
+            await reserve_balance(user_id, order_data.ticker, order_data.qty, db)
 
         elif (order_data.direction == Direction.BUY) and (isinstance(order_data, LimitOrderBody)):
             cost = order_data.qty * order_data.price
             avail_rub = await get_available_balance(user_id, "RUB", db)
             if avail_rub < cost:
                 raise HTTPException(status_code=400, detail="Insufficient 'RUB' balance for order")
-            await reserve_balance(user_id, "RUB", +cost, db)
+            await reserve_balance(user_id, "RUB", cost, db)
 
         elif (order_data.direction == Direction.BUY) and (isinstance(order_data, MarketOrderBody)):
             max_price = await get_max_price_for_market_rub_reserve(order_data.ticker, db)
+            if max_price is None:
+                raise HTTPException(status_code=400, detail="No liquidity to estimate market order cost")
             cost = order_data.qty * max_price
             avail_rub = await get_available_balance(user_id, "RUB", db)
             if avail_rub < cost:
                 raise HTTPException(status_code=400, detail="Insufficient 'RUB' balance for order")
-            await reserve_balance(user_id, "RUB", +cost, db)
+            await reserve_balance(user_id, "RUB", cost, db)
 
         if isinstance(order_data, MarketOrderBody):
             db_order = await create_order_in_db(order_data=order_data, price=None, user_id=user_id, db=db)
-            executed_order = await execute_market_order(db_order, db=db)
+            executed_order = await execute_market_order(db_order, max_price, db=db)
         else:
             db_order = await create_order_in_db(order_data=order_data, price=order_data.price, user_id=user_id, db=db)
             executed_order = await execute_limit_order(db_order, db=db)
@@ -100,11 +104,9 @@ async def create_order(
         return CreateOrderResponse(order_id=executed_order.id)
 
     except HTTPException:
-        logger.exception("!!!")
         await db.rollback()
         raise
     except Exception as e:
-        logger.exception("!!!")
         await db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
 
