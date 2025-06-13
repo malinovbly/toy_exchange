@@ -226,7 +226,19 @@ async def get_available_balance(user_id: UUID, ticker: str, db: AsyncSession) ->
 
 
 async def reserve_balance(user_id: UUID, ticker: str, delta: int, db: AsyncSession):
-    rec = await check_balance_record(user_id, ticker, db)
+    stmt = (
+        select(BalanceModel)
+        .where(
+            and_(
+                BalanceModel.user_id == user_id,
+                BalanceModel.instrument_ticker == ticker
+            )
+        )
+        .with_for_update()
+    )
+    result = await db.execute(stmt)
+    rec = result.scalars().first()
+
     if rec is None:
         raise HTTPException(status_code=400, detail="No Balance Record")
 
