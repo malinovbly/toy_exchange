@@ -6,6 +6,7 @@ from sqlalchemy.future import select
 from src.database.database import async_engine, Base, AsyncSessionLocal
 from src.models.instrument import InstrumentModel
 from src.models.user import UserModel
+from src.schemas.schemas import UserRole
 
 
 rub_ticker = {
@@ -21,7 +22,7 @@ async def create_admin(db: AsyncSession):
         new_admin = UserModel(
             id=uuid4(),
             name="admin",
-            role="ADMIN",
+            role=UserRole.ADMIN,
             api_key="175b6f1fc25c47e69ff73442f96298ae"
         )
         db.add(new_admin)
