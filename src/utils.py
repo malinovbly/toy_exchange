@@ -60,7 +60,7 @@ async def check_username(username: str, db: AsyncSession = Depends(get_db)):
 
 
 async def get_user_by_id(user_id: UUID, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(UserModel).filter_by(id=user_id))
+    result = await db.execute(select(UserModel).filter_by(id=user_id).with_for_update())
     return result.scalar_one_or_none()
 
 
@@ -152,6 +152,7 @@ async def check_balance_record(user_id: UUID, ticker: str, db: AsyncSession):
                 BalanceModel.instrument_ticker == ticker
             )
         )
+        .with_for_update()
     )
     return result.scalar_one_or_none()
 
