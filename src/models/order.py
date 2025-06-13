@@ -1,7 +1,6 @@
 # src/models/order.py
 from sqlalchemy import Column, String, Integer, ForeignKey, Enum as SqlEnum, DateTime
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
@@ -29,5 +28,3 @@ class OrderModel(Base):
     filled = Column(Integer, nullable=False, default=0)
 
     type = Column(SqlEnum(OrderType), nullable=False)
-
-    user = relationship("UserModel", backref="orders", passive_deletes=True)
