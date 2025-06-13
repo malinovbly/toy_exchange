@@ -14,5 +14,5 @@ class BalanceModel(Base):
     amount = Column(Integer, default=0)
     reserved = Column(Integer, default=0)
 
-    user = relationship("UserModel", backref="orders", passive_deletes=True)
-    instrument = relationship("InstrumentModel", backref="balances", passive_deletes=True)
+    user = relationship("UserModel", backref="balance", passive_deletes=True)
+    instrument = relationship("InstrumentModel", backref="balance", passive_deletes=True)
