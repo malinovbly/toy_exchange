@@ -22,8 +22,6 @@ from src.utils import (
     get_api_key
 )
 
-from src.logger import logger
-
 
 summary_tags = {
     "delete_user": "Delete User",
@@ -104,7 +102,6 @@ async def delete_instrument(
             return Ok()
 
     except Exception:
-        logger.exception("DELETE INSTRUMENT ERROR")
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 

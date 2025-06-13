@@ -2,7 +2,7 @@
 from uuid import uuid4, UUID
 from fastapi import Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import update, delete, and_, asc, desc
+from sqlalchemy import and_, asc, desc
 from sqlalchemy.future import select
 from datetime import datetime, timezone
 from typing import Union, List, Optional
@@ -42,7 +42,6 @@ def get_api_key(authorization: str):
 async def register_new_user(user: NewUser, db: AsyncSession = Depends(get_db)):
     user_id = uuid4()
     token = uuid4()
-
     db_user = UserModel(
         id=user_id,
         name=user.name,
@@ -50,10 +49,8 @@ async def register_new_user(user: NewUser, db: AsyncSession = Depends(get_db)):
         api_key=token
     )
     db.add(db_user)
-
     await db.commit()
     await db.refresh(db_user)
-
     return db_user
 
 
@@ -134,8 +131,6 @@ async def delete_instrument_by_ticker(ticker: str, db: AsyncSession = Depends(ge
     if db_instrument is None:
         raise HTTPException(status_code=404, detail=f"Ticker '{ticker}' Not Found")
 
-    await db.execute(delete(BalanceModel).filter_by(instrument_ticker=ticker))
-
     await db.delete(db_instrument)
     await db.commit()
 
@@ -169,29 +164,16 @@ async def user_balance_deposit(request: Body_deposit_api_v1_admin_balance_deposi
 
     record = await check_balance_record(user_id=request.user_id, ticker=request.ticker, db=db)
     if record is not None:
-        new_amount = record.amount + request.amount
-        updated_record = (
-            update(BalanceModel)
-            .where(
-                and_(
-                    BalanceModel.user_id == record.user_id,
-                    BalanceModel.instrument_ticker == record.instrument_ticker
-                )
-            )
-            .values(amount=new_amount)
-        )
-        await db.execute(updated_record)
-        await db.commit()
-        await db.refresh(record)
+        record.amount += request.amount
     else:
-        new_record = BalanceModel(
+        record = BalanceModel(
             user_id=request.user_id,
             instrument_ticker=request.ticker,
             amount=request.amount
         )
-        db.add(new_record)
-        await db.commit()
-        await db.refresh(new_record)
+    db.add(record)
+    await db.commit()
+    await db.refresh(record)
 
 
 async def user_balance_withdraw(request: Body_withdraw_api_v1_admin_balance_withdraw_post, db: AsyncSession):
@@ -206,18 +188,10 @@ async def user_balance_withdraw(request: Body_withdraw_api_v1_admin_balance_with
     else:
         new_amount = record.amount - request.amount
         if new_amount >= 0:
-            updated_record = (
-                update(BalanceModel)
-                .where(
-                    and_(
-                        BalanceModel.user_id == record.user_id,
-                        BalanceModel.instrument_ticker == record.instrument_ticker
-                    )
-                )
-                .values(amount=new_amount)
-            )
-            await db.execute(updated_record)
+            record.amount = new_amount
+            db.add(record)
             await db.commit()
+            await db.refresh(record)
         else:
             raise HTTPException(status_code=403, detail="Insufficient Funds")
         
@@ -268,7 +242,7 @@ async def lock_and_update_balance(changes: list[tuple[UUID, str, int]], db: Asyn
             .with_for_update()
         )
         result = await db.execute(stmt)
-        balance = result.scalars().first()
+        balance = result.scalar_one_or_none()
 
         if balance is None:
             balance = BalanceModel(user_id=user_id, instrument_ticker=ticker, amount=0)
@@ -290,9 +264,9 @@ async def get_max_price_for_market_rub_reserve(ticker: str, db: AsyncSession):
         select(OrderModel.price)
         .where(
             and_(
-                OrderModel.ticker == ticker,
-                OrderModel.direction == Direction.SELL,
                 OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED]),
+                OrderModel.direction == Direction.SELL,
+                OrderModel.ticker == ticker,
                 OrderModel.price.isnot(None)
             )
         )
@@ -309,9 +283,9 @@ async def get_bids(ticker: str, limit: int, db: AsyncSession):
         select(OrderModel)
         .where(
             and_(
-                OrderModel.ticker == ticker,
-                OrderModel.direction == Direction.BUY,
                 OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED]),
+                OrderModel.direction == Direction.BUY,
+                OrderModel.ticker == ticker,
                 OrderModel.price.isnot(None)
             )
         )
@@ -326,9 +300,9 @@ async def get_asks(ticker: str, limit: int, db: AsyncSession):
         select(OrderModel)
         .where(
             and_(
-                OrderModel.ticker == ticker,
-                OrderModel.direction == Direction.SELL,
                 OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED]),
+                OrderModel.direction == Direction.SELL,
+                OrderModel.ticker == ticker,
                 OrderModel.price.isnot(None)
             )
         )
@@ -505,9 +479,9 @@ async def execute_market_order(market_order: OrderModel, max_price: int, db: Asy
         select(OrderModel)
         .where(
             and_(
-                OrderModel.ticker == ticker,
-                OrderModel.direction == opposite_direction,
                 OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED]),
+                OrderModel.direction == opposite_direction,
+                OrderModel.ticker == ticker,
                 OrderModel.price.isnot(None)
             )
         )
@@ -574,9 +548,9 @@ async def execute_limit_order(limit_order: OrderModel, db: AsyncSession):
         select(OrderModel)
         .where(
             and_(
-                OrderModel.ticker == ticker,
-                OrderModel.direction == opposite_direction,
                 OrderModel.status.in_([OrderStatus.NEW, OrderStatus.PARTIALLY_EXECUTED]),
+                OrderModel.direction == opposite_direction,
+                OrderModel.ticker == ticker,
                 OrderModel.price.isnot(None),
                 price_condition
             )
