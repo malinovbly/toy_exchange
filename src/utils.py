@@ -529,6 +529,12 @@ async def execute_market_order(market_order: OrderModel, db: AsyncSession):
 
     if total_filled == 0:
         market_order.status = OrderStatus.CANCELLED
+        if market_order.direction == Direction.SELL:
+            await reserve_balance(market_order.user_id, market_order.ticker, -market_order.qty, db)
+        elif market_order.direction == Direction.BUY:
+            max_price = await get_max_price_for_market_rub_reserve(market_order.ticker, db)
+            cost = market_order.qty * max_price
+            await reserve_balance(market_order.user_id, "RUB", -cost, db)
         db.add(market_order)
         await db.commit()
         raise HTTPException(status_code=400, detail="No matching orders in the orderbook")
